@@ -1067,10 +1067,14 @@ table.matrix {
 .res-occupy-seg:active { transform: scale(0.99); }
 .res-occupy-seg.on { box-shadow: inset 0 0 0 2px var(--wip); }
 .res-occupy-seg.dim { opacity: 0.42; }
-.res-table.ant-table-wrapper { margin: 0; min-width: 0; }
+.res-table.ant-table-wrapper { margin: 0; min-width: 0; max-width: 100%; }
 .res-table .ant-table {
   background: transparent;
   font-size: 0.82rem;
+}
+.res-table .ant-table-container,
+.res-table .ant-table-content {
+  overflow-x: auto;
 }
 .res-table .ant-table-container { border: 0 !important; }
 .res-table .ant-table-thead > tr > th {
@@ -1484,6 +1488,7 @@ table.matrix {
   .action-board { grid-auto-columns: 200px; grid-auto-flow: column; }
   .lane-path-dots { display: none; }
   .lane-path-frac { width: auto; }
+  .res-table .ant-table { width: 100% !important; }
   .res-occupy-seg { min-width: 48px; padding: 6px 8px; }
   .res-occupy-head { align-items: flex-start; }
   .res-dri .ant-typography { max-width: 3.6em; }
