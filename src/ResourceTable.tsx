@@ -1,4 +1,4 @@
-import { Badge, Button, Empty, Segmented, Table, Tag, Tooltip, Typography } from "antd";
+import { Badge, Button, Empty, Segmented, Space, Table, Tag, Tooltip, Typography } from "antd";
 import type { TableColumnsType } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import { PEOPLE, STAGES, TODAY } from "./mock";
@@ -453,21 +453,24 @@ function OccupyChart({
           ) : null}
         </div>
         <div className="res-occupy-tools">
-          <ul className="res-types">
-            {types.map((row) => (
-              <li key={row.type}>
-                <button
-                  type="button"
-                  className={`res-type-chip${typeFilter === row.type ? " on" : ""}${typeFilter && typeFilter !== row.type ? " dim" : ""}`}
-                  aria-pressed={typeFilter === row.type}
+          <Space size={6} wrap className="res-types">
+            {types.map((row) => {
+              const on = typeFilter === row.type;
+              return (
+                <Button
+                  key={row.type}
+                  size="small"
+                  color={on ? "primary" : "default"}
+                  variant={on ? "solid" : "filled"}
+                  aria-pressed={on}
                   onClick={() => onType(row.type)}
                 >
                   {row.type}
                   <b>{row.count}</b>
-                </button>
-              </li>
-            ))}
-          </ul>
+                </Button>
+              );
+            })}
+          </Space>
           <Segmented
             size="small"
             value={mode}

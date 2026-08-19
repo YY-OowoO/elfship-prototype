@@ -11,6 +11,7 @@ createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <ConfigProvider
       locale={zhCN}
+      button={{ autoInsertSpace: false }}
       theme={{
         token: {
           colorPrimary: ios.blue,
@@ -24,6 +25,9 @@ createRoot(document.getElementById("root")!).render(
           colorBgLayout: ios.grouped,
           colorBgContainer: ios.surface,
           borderRadius: 8,
+          controlHeight: 32,
+          controlHeightSM: 28,
+          controlHeightLG: 40,
           fontSize: 14,
           fontSizeSM: 12,
           fontSizeLG: 16,
@@ -45,6 +49,13 @@ createRoot(document.getElementById("root")!).render(
           },
           Button: {
             autoInsertSpace: false,
+            fontWeight: 500,
+            paddingInline: 14,
+            paddingInlineSM: 10,
+          },
+          Tag: {
+            defaultBg: ios.gray6,
+            defaultColor: ios.label,
           },
         },
       }}

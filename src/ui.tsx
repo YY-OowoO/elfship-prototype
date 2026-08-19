@@ -121,7 +121,7 @@ export function OverflowCards({
             </div>
           }
         >
-          <Button type="link" className="more-btn">
+          <Button type="link" size="small" className="more-btn">
             +{rest.length}
           </Button>
         </Popover>

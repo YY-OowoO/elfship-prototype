@@ -168,6 +168,7 @@ export function App() {
           <span>上线管控</span>
         </div>
         <Segmented
+          size="small"
           className="nav-seg"
           value={view}
           onChange={(v) => setView(v as View)}
@@ -181,6 +182,7 @@ export function App() {
         <label className="role">
           预览身份
           <Select
+            size="small"
             value={actor}
             onChange={(v) => setActor(v)}
             options={PREVIEW_ROLES.map((r) => ({ value: r.id, label: r.label }))}
@@ -199,11 +201,11 @@ export function App() {
                 <Button type="primary" size="small" onClick={copyShareLink}>
                   {copied ? "已复制" : "复制链接"}
                 </Button>
-                <Button size="small" href={SHARE_URL} target="_blank" rel="noreferrer">
+                <Button type="default" size="small" href={SHARE_URL} target="_blank" rel="noreferrer">
                   打开页面
                 </Button>
                 {typeof navigator !== "undefined" && typeof navigator.share === "function" ? (
-                  <Button size="small" onClick={nativeShare}>
+                  <Button type="default" size="small" onClick={nativeShare}>
                     系统分享
                   </Button>
                 ) : null}
@@ -214,11 +216,11 @@ export function App() {
             </div>
           }
         >
-          <Button type="text" className="share-btn">
+          <Button type="text" size="small" className="share-btn">
             {copied ? "已复制" : "分享"}
           </Button>
         </Popover>
-        <span className="proto-tag">参考原型 · 假数据</span>
+        <Tag className="proto-tag">参考原型 · 假数据</Tag>
       </header>
       <div className="scroll-rail" aria-hidden="true">
         <i className="scroll-rail-fill" />
@@ -351,7 +353,7 @@ export function App() {
             }
             extra={
               stageFilter ? (
-                <Button type="link" onClick={() => setStageFilter(null)}>
+                <Button type="link" size="small" onClick={() => setStageFilter(null)}>
                   看全部
                 </Button>
               ) : null
@@ -545,11 +547,12 @@ export function App() {
                   />
                 </label>
               </section>
-              <section className="block">
+              <section className="block item-actions">
                 <h3>处理</h3>
                 {err && <Alert type="error" showIcon message={err} style={{ marginBottom: 8 }} />}
-                <Space wrap>
+                <Flex gap={8} wrap>
                   <Button
+                    type="default"
                     onClick={() => {
                       const msg = canStart(open.item, actor);
                       if (msg) setErr(msg);
@@ -562,6 +565,7 @@ export function App() {
                     开始
                   </Button>
                   <Button
+                    type="default"
                     onClick={() => {
                       const msg = canSubmit(open.item, actor);
                       if (msg) setErr(msg);
@@ -588,6 +592,7 @@ export function App() {
                   </Button>
                   {open.item.state === "rejected" && (
                     <Button
+                      type="default"
                       onClick={() => {
                         update(reworkItem(batch, open.item.id, actor));
                         setErr(null);
@@ -596,13 +601,14 @@ export function App() {
                       开始返工
                     </Button>
                   )}
-                </Space>
-                <label className="field" style={{ marginTop: 10 }}>
+                </Flex>
+                <label className="field" style={{ marginTop: 12 }}>
                   退回原因
                   <Input.TextArea rows={2} value={reason} onChange={(e) => setReason(e.target.value)} />
                 </label>
                 <Button
-                  danger
+                  color="danger"
+                  variant="outlined"
                   onClick={() => {
                     const msg = canReject(open.item, actor, reason);
                     if (msg) setErr(msg);
@@ -631,6 +637,8 @@ export function App() {
         }}
         okText="确认调整"
         cancelText="取消"
+        okButtonProps={{ type: "primary" }}
+        cancelButtonProps={{ type: "default" }}
       >
         <p className="hint">未完成且未钉死的任务会按工作日平移截止日期，并写入过程记录。已完成节点保持原日期。</p>
         <DatePicker
