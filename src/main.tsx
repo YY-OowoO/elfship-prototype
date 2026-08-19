@@ -4,25 +4,26 @@ import { ConfigProvider } from "antd";
 import zhCN from "antd/locale/zh_CN";
 import "antd/dist/reset.css";
 import { App } from "./App";
+import { ios } from "./tokens";
 import "./styles.css";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <ConfigProvider
       locale={zhCN}
-      autoInsertSpaceInButton={false}
       theme={{
         token: {
-          colorPrimary: "#1f5f99",
-          colorError: "#c0392b",
-          colorWarning: "#c48a12",
-          colorSuccess: "#2f6f4e",
-          colorInfo: "#5b3fa0",
-          colorText: "#1b1f24",
-          colorTextSecondary: "#4a535e",
-          colorBorder: "#d5dae1",
-          colorBgLayout: "#e8ecf1",
-          borderRadius: 6,
+          colorPrimary: ios.blue,
+          colorError: ios.red,
+          colorWarning: ios.orange,
+          colorSuccess: ios.green,
+          colorInfo: ios.indigo,
+          colorText: ios.label,
+          colorTextSecondary: ios.secondaryLabel,
+          colorBorder: ios.gray4,
+          colorBgLayout: ios.grouped,
+          colorBgContainer: ios.surface,
+          borderRadius: 8,
           fontSize: 14,
           fontSizeSM: 12,
           fontSizeLG: 16,
@@ -41,6 +42,9 @@ createRoot(document.getElementById("root")!).render(
           },
           Card: {
             headerFontSize: 15,
+          },
+          Button: {
+            autoInsertSpace: false,
           },
         },
       }}

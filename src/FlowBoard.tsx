@@ -320,9 +320,9 @@ function FlowColumn({
             value={shownDone}
             suffix={`/${roll.total}`}
             styles={{
-              title: { fontSize: 14, fontWeight: 600, color: "#1c2228", marginBottom: 2 },
-              content: { fontSize: 22, fontWeight: 600, color: "#1c2228" },
-              suffix: { fontSize: 16, fontWeight: 600, color: "#4a5560" },
+              title: { fontSize: 14, fontWeight: 600, color: "#000000", marginBottom: 2 },
+              content: { fontSize: 22, fontWeight: 600, color: "#000000" },
+              suffix: { fontSize: 16, fontWeight: 600, color: "rgba(60, 60, 67, 0.68)" },
             }}
           />
           <div className="kanban-meta">

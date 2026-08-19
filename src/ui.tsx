@@ -1,6 +1,7 @@
 import { useEffect, useState, type HTMLAttributes, type ReactNode } from "react";
 import { Avatar, Button, Flex, Popover, Progress, Statistic, Tag, Tooltip, Typography } from "antd";
 import { PEOPLE } from "./mock";
+import { AVATAR_COLORS, ios } from "./tokens";
 import { PulseLottie } from "./motion/StatusLottie";
 import { formatDay, itemLight, listWorkdays, remainLabel, stateLabel, stateTone, weekdayLabel } from "./logic";
 import type { PersonId, ResourceLane, WorkItem } from "./types";
@@ -10,9 +11,10 @@ export const CARD_CAP = 3;
 
 export function avatar(id: PersonId, size = 24) {
   const p = PEOPLE[id];
+  const color = AVATAR_COLORS[Math.round(p.hue / 36) % AVATAR_COLORS.length];
   return (
     <Tooltip title={`${p.name} · ${p.title}`}>
-      <Avatar size={size} style={{ background: `hsl(${p.hue} 42% 38%)`, flex: "none" }}>
+      <Avatar size={size} style={{ background: color, flex: "none" }}>
         {p.initials}
       </Avatar>
     </Tooltip>
@@ -129,10 +131,10 @@ export function OverflowCards({
 }
 
 const STAT_COLOR = {
-  neutral: "#1b1f24",
-  danger: "#c0392b",
-  warning: "#c48a12",
-  success: "#2f6f4e",
+  neutral: ios.label,
+  danger: ios.red,
+  warning: ios.orange,
+  success: ios.green,
 } as const;
 
 export function SingleStat({
@@ -305,7 +307,7 @@ export function LaunchDays({
 
 export function StageProgress({ done, total, light }: { done: number; total: number; light: string }) {
   const pct = total === 0 ? 0 : Math.round((done / total) * 100);
-  const stroke = light === "red" ? "#d06a5e" : light === "yellow" ? "#e0b14a" : "#7fa38f";
+  const stroke = light === "red" ? ios.red : light === "yellow" ? ios.orange : ios.green;
   return (
     <Progress
       percent={pct}
