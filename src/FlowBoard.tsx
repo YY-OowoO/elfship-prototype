@@ -1,11 +1,9 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   DndContext,
-  DragOverlay,
   KeyboardSensor,
   MeasuringStrategy,
   PointerSensor,
-  defaultDropAnimationSideEffects,
   pointerWithin,
   rectIntersection,
   useDraggable,
@@ -14,10 +12,11 @@ import {
   useSensors,
   type CollisionDetection,
   type DragEndEvent,
+  type DragMoveEvent,
   type DragOverEvent,
   type DragStartEvent,
-  type DropAnimation,
 } from "@dnd-kit/core";
+import gsap from "gsap";
 import { Button, Empty, Popover, Statistic } from "antd";
 import { STAGES } from "./mock";
 import {
@@ -34,6 +33,7 @@ import type { LaunchBatch, PersonId, ResourceLane, StageKey, WorkItem } from "./
 import { CARD_CAP, StageProgress, WorkCard, useCount } from "./ui";
 import { CheckLottie } from "./motion/StatusLottie";
 import { KanbanFlip } from "./motion/KanbanFlip";
+import { DragLayer, type DragApi, type DragOrigin } from "./motion/DragLayer";
 
 function laneDragId(laneId: string) {
   return `lane:${laneId}`;
@@ -50,14 +50,6 @@ function parseLaneId(id: string) {
 function parseColId(id: string): StageKey | null {
   return id.startsWith("col:") ? (id.slice(4) as StageKey) : null;
 }
-
-const dropAnimation: DropAnimation = {
-  duration: 240,
-  easing: "cubic-bezier(0.22, 1, 0.36, 1)",
-  sideEffects: defaultDropAnimationSideEffects({
-    styles: { active: { opacity: "0" } },
-  }),
-};
 
 const columnCollision: CollisionDetection = (args) => {
   const cols = args.droppableContainers.filter((entry) => String(entry.id).startsWith("col:"));
@@ -114,8 +106,13 @@ export function FlowBoard({
   const [activeLaneId, setActiveLaneId] = useState<string | null>(null);
   const [overStage, setOverStage] = useState<StageKey | null>(null);
   const [landingId, setLandingId] = useState<string | null>(null);
+  const [quietStage, setQuietStage] = useState<StageKey | null>(null);
+  const [origin, setOrigin] = useState<DragOrigin | null>(null);
+  const dragApi = useRef<DragApi | null>(null);
+  const originRef = useRef<DragOrigin | null>(null);
+  const lastDelta = useRef({ x: 0, t: 0 });
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
     useSensor(KeyboardSensor),
   );
 
@@ -135,29 +132,69 @@ export function FlowBoard({
   const ready = activeItem ? canConfirm(activeItem, actor) === null : false;
 
   function handleDragStart(e: DragStartEvent) {
-    setActiveLaneId(parseLaneId(String(e.active.id)));
+    const laneId = parseLaneId(String(e.active.id));
+    setActiveLaneId(laneId);
+    const rect = e.active.rect.current.initial;
+    const box: DragOrigin = rect
+      ? { x: rect.left, y: rect.top, w: rect.width, h: rect.height }
+      : { x: 0, y: 0, w: 168, h: 72 };
+    originRef.current = box;
+    setOrigin(box);
+    lastDelta.current = { x: 0, t: performance.now() };
+  }
+
+  function handleDragMove(e: DragMoveEvent) {
+    const box = originRef.current;
+    if (!box) return;
+    const now = performance.now();
+    const dt = Math.max(8, now - lastDelta.current.t);
+    const vx = (e.delta.x - lastDelta.current.x) / dt;
+    lastDelta.current = { x: e.delta.x, t: now };
+    const tilt = gsap.utils.clamp(-9, 9, vx * 160);
+    dragApi.current?.follow(box.x + e.delta.x, box.y + e.delta.y, tilt);
   }
 
   function handleDragOver(e: DragOverEvent) {
     setOverStage(e.over ? parseColId(String(e.over.id)) : null);
   }
 
-  function handleDragEnd(e: DragEndEvent) {
+  async function finishDrag(e: DragEndEvent) {
     const laneId = parseLaneId(String(e.active.id));
     const dest = e.over ? parseColId(String(e.over.id)) : null;
     const lane = laneId ? batch.lanes.find((row) => row.id === laneId) : null;
     const item = lane ? currentItem(lane) : null;
     const next = item ? nextStageKey(item.stage) : null;
-    setActiveLaneId(null);
+    const box = originRef.current;
+    const needConfirm = Boolean(item && dest === next && canConfirm(item, actor));
+    const ok = Boolean(laneId && dest && item && dest === next && !needConfirm);
     setOverStage(null);
-    if (!laneId || !dest || !item || dest !== next) return;
-    if (canConfirm(item, actor)) {
+
+    if (box && dragApi.current) {
+      if (ok && dest) {
+        const slot = document.querySelector(`#flow-col-${dest} .kanban-flip`)?.getBoundingClientRect();
+        const x = slot ? slot.left + 6 : box.x;
+        const y = slot ? slot.top + 6 : box.y;
+        const scale = slot ? Math.min(1, (slot.width - 12) / Math.max(1, box.w)) : 1;
+        await dragApi.current.settle(x, y, scale);
+      } else {
+        await dragApi.current.settle(box.x, box.y, 1);
+      }
+    }
+
+    setActiveLaneId(null);
+    setOrigin(null);
+    originRef.current = null;
+
+    if (needConfirm && item) {
       onOpen(item.id);
       return;
     }
+    if (!ok || !laneId || !dest) return;
+    setQuietStage(dest);
     setLandingId(laneId);
     onDropLane(laneId, dest);
-    window.setTimeout(() => setLandingId((cur) => (cur === laneId ? null : cur)), 380);
+    window.setTimeout(() => setQuietStage(null), 40);
+    window.setTimeout(() => setLandingId((cur) => (cur === laneId ? null : cur)), 420);
   }
 
   return (
@@ -167,11 +204,13 @@ export function FlowBoard({
       measuring={{ droppable: { strategy: MeasuringStrategy.Always } }}
       autoScroll={{ threshold: { x: 0.12, y: 0.2 }, acceleration: 10 }}
       onDragStart={handleDragStart}
+      onDragMove={handleDragMove}
       onDragOver={handleDragOver}
-      onDragEnd={handleDragEnd}
-      onDragCancel={() => {
-        setActiveLaneId(null);
-        setOverStage(null);
+      onDragEnd={(e) => {
+        void finishDrag(e);
+      }}
+      onDragCancel={(e) => {
+        void finishDrag(e);
       }}
     >
       <div className={`kanban${activeLaneId ? " is-dragging" : ""}`}>
@@ -198,7 +237,7 @@ export function FlowBoard({
               hot={overStage === st.key && tone === "ok"}
               active={stageFilter === st.key}
               landingId={landingId}
-              flipping={!activeLaneId}
+              flipping={!activeLaneId && quietStage !== st.key}
               onFilter={() => {
                 onFilter(stageFilter === st.key ? null : st.key);
                 document
@@ -210,13 +249,15 @@ export function FlowBoard({
           );
         })}
       </div>
-      <DragOverlay dropAnimation={dropAnimation} className="kanban-overlay">
-        {active && activeItem && (
-          <div className="k-card-lift">
-            <WorkCard name={active.name} item={activeItem} extra={stateLabel(activeItem)} onOpen={() => undefined} />
-          </div>
-        )}
-      </DragOverlay>
+      {active && activeItem && origin ? (
+        <DragLayer
+          lane={active}
+          item={activeItem}
+          extra={stateLabel(activeItem)}
+          origin={origin}
+          apiRef={dragApi}
+        />
+      ) : null}
     </DndContext>
   );
 }
@@ -291,7 +332,7 @@ function FlowColumn({
         </button>
         <StageProgress done={roll.done} total={roll.total} light={roll.light} />
       </div>
-      <KanbanFlip sig={flipSig} delay={index * 0.05} frozen={!flipping}>
+      <KanbanFlip sig={flipSig} delay={index * 0.036} frozen={!flipping}>
         {here.length === 0 && roll.done === roll.total && !hint && (
           <div className="k-empty">
             <CheckLottie className="k-empty-lottie" />

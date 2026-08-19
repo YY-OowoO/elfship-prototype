@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { flushSync } from "react-dom";
 import gsap from "gsap";
 import { prefersReduce } from "./prefers";
+import { iosIn, iosOut } from "./eases";
 
 export function KanbanFlip({
   sig,
@@ -40,23 +41,25 @@ export function KanbanFlip({
 
     tween.current?.kill();
     const previous = first ? "" : lastHtml.current;
-    if (previous) {
-      flushSync(() => setGhost(previous));
-    } else {
-      setGhost(null);
-    }
+    if (previous) flushSync(() => setGhost(previous));
+    else setGhost(null);
 
     const out = ghostRef.current;
     gsap.set(live, {
       transformOrigin: "50% 0%",
-      rotateX: -86,
-      opacity: 1,
+      rotateX: -54,
+      y: -8,
+      scale: 0.985,
+      opacity: 0.35,
+      filter: "brightness(0.94)",
       force3D: true,
     });
     if (out) {
       gsap.set(out, {
         transformOrigin: "50% 0%",
         rotateX: 0,
+        y: 0,
+        scale: 1,
         opacity: 1,
         force3D: true,
       });
@@ -66,34 +69,54 @@ export function KanbanFlip({
     const finish = () => {
       done = true;
       setGhost(null);
-      gsap.set(live, { clearProps: "transform,opacity" });
+      gsap.set(live, { clearProps: "transform,opacity,filter" });
       snapshot();
     };
 
-    const tl = gsap.timeline({
-      delay,
-      onComplete: finish,
-    });
+    const tl = gsap.timeline({ delay, onComplete: finish });
     tween.current = tl;
 
     if (out) {
       tl.to(
         out,
         {
-          rotateX: 86,
-          duration: 0.26,
-          ease: "power2.in",
+          rotateX: 58,
+          y: 10,
+          opacity: 0,
+          scale: 0.99,
+          duration: 0.36,
+          ease: iosIn,
         },
         0,
       );
-      tl.to(live, { rotateX: 0, duration: 0.4, ease: "power3.out" }, 0.12);
+      tl.to(
+        live,
+        {
+          rotateX: 0,
+          y: 0,
+          scale: 1,
+          opacity: 1,
+          filter: "brightness(1)",
+          duration: 0.62,
+          ease: iosOut,
+        },
+        0.08,
+      );
     } else {
-      tl.to(live, { rotateX: 0, duration: 0.48, ease: "power3.out" });
+      tl.to(live, {
+        rotateX: 0,
+        y: 0,
+        scale: 1,
+        opacity: 1,
+        filter: "brightness(1)",
+        duration: 0.7,
+        ease: iosOut,
+      });
     }
 
     return () => {
       tl.kill();
-      gsap.set(live, { clearProps: "transform,opacity" });
+      gsap.set(live, { clearProps: "transform,opacity,filter" });
       if (out) gsap.set(out, { clearProps: "transform,opacity" });
       if (!done && first) lastSig.current = null;
     };
