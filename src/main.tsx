@@ -10,6 +10,7 @@ createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <ConfigProvider
       locale={zhCN}
+      autoInsertSpaceInButton={false}
       theme={{
         token: {
           colorPrimary: "#1f5f99",
