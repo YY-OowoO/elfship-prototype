@@ -1,43 +1,43 @@
 :root {
-  --ink: #000000;
-  --ink-soft: rgba(60, 60, 67, 0.68);
-  --muted: rgba(60, 60, 67, 0.48);
-  --line: #d1d1d6;
-  --line-strong: #c7c7cc;
-  --separator: rgba(60, 60, 67, 0.18);
-  --paper: #f2f2f7;
-  --surface: #f2f2f7;
+  --ink: rgba(0, 0, 0, 0.88);
+  --ink-soft: rgba(0, 0, 0, 0.65);
+  --muted: rgba(0, 0, 0, 0.45);
+  --line: #d9d9d9;
+  --line-strong: #bfbfbf;
+  --separator: #f0f0f0;
+  --paper: #f5f5f5;
+  --surface: #f5f5f5;
   --white: #ffffff;
-  --fill: rgba(120, 120, 128, 0.12);
+  --fill: rgba(0, 0, 0, 0.06);
   --nav: #ffffff;
-  --nav-2: #f2f2f7;
-  --ok: #34c759;
-  --ok-bg: rgba(52, 199, 89, 0.16);
-  --wip: #007aff;
-  --wip-bg: rgba(0, 122, 255, 0.12);
-  --wfa: #5856d6;
-  --wfa-bg: rgba(88, 86, 214, 0.14);
-  --retake: #ff9500;
-  --retake-bg: rgba(255, 149, 0, 0.16);
-  --todo: #8e8e93;
-  --todo-bg: rgba(120, 120, 128, 0.12);
-  --lock: #8e8e93;
-  --lock-bg: rgba(120, 120, 128, 0.16);
-  --wait: #aeaeb2;
-  --wait-bg: rgba(120, 120, 128, 0.1);
-  --skip: #c7c7cc;
-  --skip-bg: rgba(120, 120, 128, 0.08);
-  --gray: #8e8e93;
-  --red: #ff3b30;
-  --red-bg: rgba(255, 59, 48, 0.14);
-  --yellow: #ff9500;
-  --yellow-bg: rgba(255, 149, 0, 0.16);
-  --radius: 10px;
-  --radius-md: 8px;
-  --radius-sm: 6px;
+  --nav-2: #f5f5f5;
+  --ok: #52c41a;
+  --ok-bg: #f6ffed;
+  --wip: #1677ff;
+  --wip-bg: #e6f4ff;
+  --wfa: #722ed1;
+  --wfa-bg: #f9f0ff;
+  --retake: #fa8c16;
+  --retake-bg: #fff7e6;
+  --todo: rgba(0, 0, 0, 0.45);
+  --todo-bg: rgba(0, 0, 0, 0.04);
+  --lock: rgba(0, 0, 0, 0.45);
+  --lock-bg: rgba(0, 0, 0, 0.06);
+  --wait: rgba(0, 0, 0, 0.25);
+  --wait-bg: rgba(0, 0, 0, 0.04);
+  --skip: rgba(0, 0, 0, 0.25);
+  --skip-bg: rgba(0, 0, 0, 0.02);
+  --gray: rgba(0, 0, 0, 0.45);
+  --red: #ff4d4f;
+  --red-bg: #fff2f0;
+  --yellow: #faad14;
+  --yellow-bg: #fffbe6;
+  --radius: 8px;
+  --radius-md: 6px;
+  --radius-sm: 4px;
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
-  --shadow: 0 0.5px 0 rgb(60 60 67 / 6%), 0 1px 2px rgb(60 60 67 / 6%);
-  --shadow-lift: 0 4px 16px rgb(60 60 67 / 12%);
+  --shadow: 0 1px 2px rgb(0 0 0 / 3%), 0 1px 6px -1px rgb(0 0 0 / 2%), 0 2px 4px rgb(0 0 0 / 2%);
+  --shadow-lift: 0 6px 16px 0 rgb(0 0 0 / 8%), 0 3px 6px -4px rgb(0 0 0 / 12%);
   --font: "IBM Plex Sans SC", "IBM Plex Sans", "PingFang SC", "Microsoft YaHei", sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, monospace;
 }
@@ -415,8 +415,8 @@ textarea:focus-visible {
   to { transform: rotate(270deg); }
 }
 @keyframes hero-pulse {
-  0%, 100% { box-shadow: inset 0 0 0 0 rgb(255 59 48 / 0); }
-  50% { box-shadow: inset 0 0 0 2px rgb(255 59 48 / 28%); }
+  0%, 100% { box-shadow: inset 0 0 0 0 rgb(255 77 79 / 0); }
+  50% { box-shadow: inset 0 0 0 2px rgb(255 77 79 / 28%); }
 }
 @media (prefers-reduced-motion: reduce) {
   .hero-track-spin,
@@ -626,7 +626,7 @@ textarea:focus-visible {
 }
 .kanban.is-dragging .kanban-col.drop-ok.drop-hot {
   background: var(--ok-bg);
-  box-shadow: inset 0 0 0 2px var(--ok), 0 0 0 4px rgb(52 199 89 / 18%);
+  box-shadow: inset 0 0 0 2px var(--ok), 0 0 0 4px rgb(82 196 26 / 18%);
   transform: scale(1.012);
 }
 .kanban.is-dragging .kanban-col.drop-wait {
@@ -907,8 +907,8 @@ textarea:focus-visible {
 .k-card:active { cursor: grabbing; transform: scale(0.99); }
 .k-card.red { box-shadow: inset 3px 0 0 var(--red); }
 .k-card.yellow { box-shadow: inset 3px 0 0 var(--yellow); }
-.k-card.wip { background: var(--wip-bg); border-color: rgb(0 122 255 / 28%); }
-.k-card.wfa { background: var(--wfa-bg); border-color: rgb(88 86 214 / 28%); }
+.k-card.wip { background: var(--wip-bg); border-color: #91caff; }
+.k-card.wfa { background: var(--wfa-bg); border-color: #d3adf7; }
 .k-card.lock { background: var(--lock-bg); }
 .k-card.retake { background: var(--retake-bg); }
 .k-card-name { font-weight: 600; font-size: 1.05em; line-height: 1.3; }

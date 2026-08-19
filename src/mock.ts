@@ -3,13 +3,13 @@ import type { LaunchBatch, Person, PersonId, ResourceLane, StageDef, StageKey, W
 export const TODAY = "2026-08-18";
 
 export const STAGES: StageDef[] = [
-  { key: "launch", short: "上新", name: "上新时间表", color: "#34C759" },
-  { key: "schedule", short: "排期", name: "制片排期表", color: "#007AFF" },
-  { key: "produce", short: "制作", name: "制作", color: "#34C759" },
-  { key: "upload", short: "上传", name: "上传 SVN", color: "#FF9500" },
-  { key: "review", short: "审核", name: "审核", color: "#5856D6" },
-  { key: "accept", short: "验收", name: "验收", color: "#30B0C7" },
-  { key: "checkin", short: "入库", name: "入库", color: "#FF2D55" },
+  { key: "launch", short: "上新", name: "上新时间表", color: "#52c41a" },
+  { key: "schedule", short: "排期", name: "制片排期表", color: "#1677ff" },
+  { key: "produce", short: "制作", name: "制作", color: "#52c41a" },
+  { key: "upload", short: "上传", name: "上传 SVN", color: "#fa8c16" },
+  { key: "review", short: "审核", name: "审核", color: "#722ed1" },
+  { key: "accept", short: "验收", name: "验收", color: "#13c2c2" },
+  { key: "checkin", short: "入库", name: "入库", color: "#eb2f96" },
 ];
 
 export const PEOPLE: Record<PersonId, Person> = {

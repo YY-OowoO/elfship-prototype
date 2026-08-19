@@ -1,7 +1,7 @@
 import { useEffect, useState, type HTMLAttributes, type ReactNode } from "react";
 import { Avatar, Button, Flex, Popover, Progress, Statistic, Tag, Tooltip, Typography } from "antd";
 import { PEOPLE } from "./mock";
-import { AVATAR_COLORS, ios } from "./tokens";
+import { AVATAR_COLORS, palette } from "./tokens";
 import { PulseLottie } from "./motion/StatusLottie";
 import { formatDay, itemLight, listWorkdays, remainLabel, stateLabel, stateTone, weekdayLabel } from "./logic";
 import type { PersonId, ResourceLane, WorkItem } from "./types";
@@ -131,10 +131,10 @@ export function OverflowCards({
 }
 
 const STAT_COLOR = {
-  neutral: ios.label,
-  danger: ios.red,
-  warning: ios.orange,
-  success: ios.green,
+  neutral: palette.label,
+  danger: palette.red,
+  warning: palette.gold,
+  success: palette.green,
 } as const;
 
 export function SingleStat({
@@ -307,7 +307,7 @@ export function LaunchDays({
 
 export function StageProgress({ done, total, light }: { done: number; total: number; light: string }) {
   const pct = total === 0 ? 0 : Math.round((done / total) * 100);
-  const stroke = light === "red" ? ios.red : light === "yellow" ? ios.orange : ios.green;
+  const stroke = light === "red" ? palette.red : light === "yellow" ? palette.gold : palette.green;
   return (
     <Progress
       percent={pct}

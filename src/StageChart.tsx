@@ -14,7 +14,7 @@ import {
   type QueueRow,
 } from "./logic";
 import type { LaunchBatch, StageKey } from "./types";
-import { ios } from "./tokens";
+import { palette } from "./tokens";
 
 const { Text } = Typography;
 
@@ -191,8 +191,8 @@ function StageProcessChart({
       <div className="stage-bars-chart">
         <ResponsiveContainer width="100%" height={120}>
           <BarChart data={bars} barCategoryGap="22%" margin={{ top: 6, right: 6, left: 0, bottom: 0 }}>
-            <CartesianGrid vertical={false} stroke={ios.gray5} />
-            <XAxis dataKey="name" tick={{ fontSize: 11, fill: ios.gray }} axisLine={false} tickLine={false} />
+            <CartesianGrid vertical={false} stroke={palette.split} />
+            <XAxis dataKey="name" tick={{ fontSize: 11, fill: palette.gray }} axisLine={false} tickLine={false} />
             <Tooltip
               cursor={{ fill: "rgba(15, 98, 254, 0.06)" }}
               formatter={(value, name) => [value as number, name === "done" ? "完成" : "未完成"]}
@@ -213,7 +213,7 @@ function StageProcessChart({
               {bars.map((d) => (
                 <Cell
                   key={d.stage}
-                  fill={d.light === "red" ? ios.red : d.light === "yellow" ? ios.orange : ios.green}
+                  fill={d.light === "red" ? palette.red : d.light === "yellow" ? palette.gold : palette.green}
                   opacity={!activeStage || activeStage === d.stage ? 1 : 0.32}
                 />
               ))}
@@ -227,7 +227,7 @@ function StageProcessChart({
               shape={(props) => <ClickableBar {...props} onStage={onStage} />}
             >
               {bars.map((d) => (
-                <Cell key={d.stage} fill={ios.gray5} opacity={!activeStage || activeStage === d.stage ? 1 : 0.32} />
+                <Cell key={d.stage} fill={palette.gray5} opacity={!activeStage || activeStage === d.stage ? 1 : 0.32} />
               ))}
             </Bar>
           </BarChart>

@@ -4,7 +4,7 @@ import { ConfigProvider } from "antd";
 import zhCN from "antd/locale/zh_CN";
 import "antd/dist/reset.css";
 import { App } from "./App";
-import { ios } from "./tokens";
+import { palette } from "./tokens";
 import "./styles.css";
 
 createRoot(document.getElementById("root")!).render(
@@ -14,16 +14,16 @@ createRoot(document.getElementById("root")!).render(
       button={{ autoInsertSpace: false }}
       theme={{
         token: {
-          colorPrimary: ios.blue,
-          colorError: ios.red,
-          colorWarning: ios.orange,
-          colorSuccess: ios.green,
-          colorInfo: ios.indigo,
-          colorText: ios.label,
-          colorTextSecondary: ios.secondaryLabel,
-          colorBorder: ios.gray4,
-          colorBgLayout: ios.grouped,
-          colorBgContainer: ios.surface,
+          colorPrimary: palette.blue,
+          colorError: palette.red,
+          colorWarning: palette.gold,
+          colorSuccess: palette.green,
+          colorInfo: palette.blue,
+          colorText: palette.label,
+          colorTextSecondary: palette.secondaryLabel,
+          colorBorder: palette.border,
+          colorBgLayout: palette.layout,
+          colorBgContainer: palette.surface,
           borderRadius: 8,
           controlHeight: 32,
           controlHeightSM: 28,
@@ -54,8 +54,8 @@ createRoot(document.getElementById("root")!).render(
             paddingInlineSM: 10,
           },
           Tag: {
-            defaultBg: ios.gray6,
-            defaultColor: ios.label,
+            defaultBg: palette.gray6,
+            defaultColor: palette.label,
           },
         },
       }}
