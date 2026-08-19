@@ -33,6 +33,7 @@ import {
 import type { LaunchBatch, PersonId, ResourceLane, StageKey, WorkItem } from "./types";
 import { CARD_CAP, StageProgress, WorkCard, useCount } from "./ui";
 import { CheckLottie } from "./motion/StatusLottie";
+import { KanbanFlip } from "./motion/KanbanFlip";
 
 function laneDragId(laneId: string) {
   return `lane:${laneId}`;
@@ -197,6 +198,7 @@ export function FlowBoard({
               hot={overStage === st.key && tone === "ok"}
               active={stageFilter === st.key}
               landingId={landingId}
+              flipping={!activeLaneId}
               onFilter={() => {
                 onFilter(stageFilter === st.key ? null : st.key);
                 document
@@ -230,6 +232,7 @@ function FlowColumn({
   hot,
   active,
   landingId,
+  flipping,
   onFilter,
   onOpen,
 }: {
@@ -243,6 +246,7 @@ function FlowColumn({
   hot: boolean;
   active: boolean;
   landingId: string | null;
+  flipping: boolean;
   onFilter: () => void;
   onOpen: (id: string) => void;
 }) {
@@ -255,6 +259,9 @@ function FlowColumn({
   const rest = here.slice(CARD_CAP);
   const hint = tone === "ok" ? "放到这里确认流转" : tone === "wait" ? "需先提交，松手打开" : null;
   const shownDone = useCount(roll.done, 560);
+  const flipSig = here
+    .map((row) => `${row.lane.id}:${row.item.id}:${row.item.state}:${row.item.locked ? 1 : 0}`)
+    .join("|");
 
   return (
     <div
@@ -284,7 +291,7 @@ function FlowColumn({
         </button>
         <StageProgress done={roll.done} total={roll.total} light={roll.light} />
       </div>
-      <div className="kanban-cards">
+      <KanbanFlip sig={flipSig} delay={index * 0.05} frozen={!flipping}>
         {here.length === 0 && roll.done === roll.total && !hint && (
           <div className="k-empty">
             <CheckLottie className="k-empty-lottie" />
@@ -331,7 +338,7 @@ function FlowColumn({
             </Button>
           </Popover>
         )}
-      </div>
+      </KanbanFlip>
       {hint && <div className="kanban-hint">{hint}</div>}
     </div>
   );

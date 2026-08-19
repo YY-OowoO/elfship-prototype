@@ -52,23 +52,6 @@ export function BoardScroll({ children }: { children: ReactNode }) {
         );
       });
 
-      const flowCols = root.querySelectorAll(".kanban-col");
-      if (flowCols.length > 0) {
-        gsap.fromTo(
-          flowCols,
-          { y: 12, opacity: 0 },
-          {
-            y: 0,
-            opacity: 1,
-            duration: 0.36,
-            stagger: 0.04,
-            ease: "power3.out",
-            delay: 0.05,
-            clearProps: "transform",
-          },
-        );
-      }
-
       const occupyKids = root.querySelectorAll(".res-occupy-seg");
       if (occupyKids.length > 0) {
         gsap.fromTo(
