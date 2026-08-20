@@ -47,11 +47,10 @@ export function KanbanFlip({
     const out = ghostRef.current;
     gsap.set(live, {
       transformOrigin: "50% 0%",
-      rotateX: -54,
-      y: -8,
-      scale: 0.985,
-      opacity: 0.35,
-      filter: "brightness(0.94)",
+      rotateX: -38,
+      y: -6,
+      scale: 0.992,
+      opacity: 0.45,
       force3D: true,
     });
     if (out) {
@@ -69,7 +68,7 @@ export function KanbanFlip({
     const finish = () => {
       done = true;
       setGhost(null);
-      gsap.set(live, { clearProps: "transform,opacity,filter" });
+      gsap.set(live, { clearProps: "transform,opacity" });
       snapshot();
     };
 
@@ -80,11 +79,10 @@ export function KanbanFlip({
       tl.to(
         out,
         {
-          rotateX: 58,
-          y: 10,
+          rotateX: 42,
+          y: 6,
           opacity: 0,
-          scale: 0.99,
-          duration: 0.36,
+          duration: 0.26,
           ease: iosIn,
         },
         0,
@@ -96,11 +94,10 @@ export function KanbanFlip({
           y: 0,
           scale: 1,
           opacity: 1,
-          filter: "brightness(1)",
-          duration: 0.62,
+          duration: 0.46,
           ease: iosOut,
         },
-        0.08,
+        0.06,
       );
     } else {
       tl.to(live, {
@@ -108,15 +105,14 @@ export function KanbanFlip({
         y: 0,
         scale: 1,
         opacity: 1,
-        filter: "brightness(1)",
-        duration: 0.7,
+        duration: 0.5,
         ease: iosOut,
       });
     }
 
     return () => {
       tl.kill();
-      gsap.set(live, { clearProps: "transform,opacity,filter" });
+      gsap.set(live, { clearProps: "transform,opacity" });
       if (out) gsap.set(out, { clearProps: "transform,opacity" });
       if (!done && first) lastSig.current = null;
     };

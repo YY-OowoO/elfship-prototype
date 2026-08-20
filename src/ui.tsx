@@ -2,7 +2,6 @@ import { useEffect, useState, type HTMLAttributes, type ReactNode } from "react"
 import { Avatar, Button, Flex, Popover, Progress, Statistic, Tag, Tooltip, Typography } from "antd";
 import { PEOPLE } from "./mock";
 import { AVATAR_COLORS, palette } from "./tokens";
-import { PulseLottie } from "./motion/StatusLottie";
 import { formatDay, itemLight, listWorkdays, remainLabel, stateLabel, stateTone, weekdayLabel } from "./logic";
 import type { PersonId, ResourceLane, WorkItem } from "./types";
 
@@ -191,16 +190,24 @@ export function useCount(to: number, ms = 900) {
   return n;
 }
 
+const DAY_CAP = 12;
+
 export function HeroMeter({
   remainDays,
   done,
   total,
   risk,
+  riskNote,
+  today,
+  launch,
 }: {
   remainDays: number;
   done: number;
   total: number;
   risk: "risk" | "watch" | "ok";
+  riskNote: string;
+  today: string;
+  launch: string;
 }) {
   const [on, setOn] = useState(false);
   useEffect(() => {
@@ -208,48 +215,68 @@ export function HeroMeter({
     return () => cancelAnimationFrame(id);
   }, [remainDays, done, total, risk]);
 
-  const shownRemain = useCount(Math.max(0, remainDays));
-  const shownDone = useCount(done);
-  const windowDays = Math.max(12, Math.abs(remainDays));
-  const timePct = remainDays <= 0 ? 0 : Math.min(1, remainDays / windowDays);
+  const overdue = remainDays < 0;
+  const remainDaysList = listWorkdays(today, launch).filter((iso) => iso > today);
+  const dayCount = overdue ? 0 : remainDays === 0 ? 1 : Math.min(DAY_CAP, remainDaysList.length);
+  const extraDays = overdue ? 0 : Math.max(0, remainDaysList.length - DAY_CAP);
+  const shownRemain = useCount(overdue ? Math.abs(remainDays) : Math.max(0, remainDays), 720);
+  const shownDone = useCount(done, 720);
   const donePct = total === 0 ? 0 : done / total;
-  const outerC = 2 * Math.PI * 70;
-  const innerC = 2 * Math.PI * 54;
   const tone = risk === "risk" ? "tone-risk" : risk === "watch" ? "tone-watch" : "tone-ok";
-  const remainText =
-    remainDays < 0 ? "已过上线" : remainDays === 0 ? "今天上线" : remainDays === 1 ? "明日上线" : "个工作日";
+  const flag = risk === "risk" ? "有风险" : risk === "watch" ? "需关注" : "正常";
+  const remainText = overdue ? "已过上线" : remainDays === 0 ? "今天上线" : remainDays === 1 ? "明日上线" : "剩余工作日";
+  const remainTip = overdue
+    ? `已过上线日 ${formatDay(launch)} ${Math.abs(remainDays)} 个工作日`
+    : remainDays === 0
+      ? `今天就是上线日 ${formatDay(launch)}`
+      : `距离上线日 ${formatDay(launch)} 还有 ${remainDays} 个工作日`;
+  const doneTip = `14 条资源按整条链路计，当前完成 ${done}/${total}`;
 
   return (
     <div className={`hero-meter ${tone}${on ? " on" : ""}`}>
-      {risk === "risk" ? <PulseLottie className="hero-lottie" /> : null}
-      <svg className="hero-svg" viewBox="0 0 168 168" aria-hidden="true">
-        <circle className="hero-track hero-track-spin" cx="84" cy="84" r="70" />
-        <circle
-          className="hero-ring hero-ring-time"
-          cx="84"
-          cy="84"
-          r="70"
-          strokeDasharray={outerC}
-          strokeDashoffset={on ? outerC * (1 - timePct) : outerC}
-        />
-        <circle className="hero-track-inner" cx="84" cy="84" r="54" />
-        <circle
-          className="hero-ring hero-ring-done"
-          cx="84"
-          cy="84"
-          r="54"
-          strokeDasharray={innerC}
-          strokeDashoffset={on ? innerC * (1 - donePct) : innerC}
-        />
-      </svg>
-      <div className="hero-core">
-        <span className={`hero-flag ${tone}`}>{risk === "risk" ? "有风险" : risk === "watch" ? "需关注" : "正常"}</span>
-        <strong className="hero-num">{remainDays < 0 ? Math.abs(remainDays) : shownRemain}</strong>
-        <span className="hero-unit">{remainText}</span>
-        <span className="hero-done">
-          完成 {shownDone}/{total}
-        </span>
-      </div>
+      <Tooltip title={riskNote}>
+        <span className={`hero-flag ${tone}`}>{flag}</span>
+      </Tooltip>
+      <Tooltip title={remainTip}>
+        <div className="hero-remain">
+          <strong className="hero-num">{shownRemain}</strong>
+          <span className="hero-unit">{remainText}</span>
+        </div>
+      </Tooltip>
+      {dayCount > 0 ? (
+        <div className="hero-days-wrap">
+          <ol className="hero-days">
+            {Array.from({ length: dayCount }, (_, i) => {
+              const iso = remainDays === 0 ? today : remainDaysList[i];
+              const last = iso === launch;
+              const tip = iso
+                ? `${last ? "上线日" : `第 ${i + 1} 个工作日`} · ${formatDay(iso)} 周${weekdayLabel(iso)}`
+                : `第 ${i + 1} 个工作日`;
+              return (
+                <Tooltip key={iso ?? i} title={tip}>
+                  <li style={{ ["--i" as string]: i }} />
+                </Tooltip>
+              );
+            })}
+            {extraDays > 0 ? (
+              <Tooltip title={`还有 ${extraDays} 个工作日未展开，上线日 ${formatDay(launch)}`}>
+                <li className="is-more">+{extraDays}</li>
+              </Tooltip>
+            ) : null}
+          </ol>
+        </div>
+      ) : null}
+      <Tooltip title={`整条链路走完才计入。当前 ${done}/${total} 条资源已完成`}>
+        <div className="hero-done">
+          <span>资源完成</span>
+          <b>
+            {shownDone}/{total}
+          </b>
+          <span className="hero-done-track">
+            <i style={{ transform: `scaleX(${on ? donePct : 0})` }} />
+          </span>
+        </div>
+      </Tooltip>
     </div>
   );
 }

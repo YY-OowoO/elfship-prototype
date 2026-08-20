@@ -35,8 +35,9 @@ createRoot(document.getElementById("root")!).render(
           fontSizeHeading5: 15,
           fontFamily:
             '"IBM Plex Sans SC", "IBM Plex Sans", "PingFang SC", "Microsoft YaHei", sans-serif',
+          motionDurationFast: "0.16s",
           motionDurationMid: "0.22s",
-          motionDurationSlow: "0.32s",
+          motionDurationSlow: "0.28s",
           motionEaseOut: "cubic-bezier(0.22, 1, 0.36, 1)",
         },
         components: {

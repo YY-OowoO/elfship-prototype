@@ -227,7 +227,7 @@ export function App() {
       </div>
 
       {view === "list" && (
-        <div className="list-page" id="main">
+        <div className="list-page view-in" id="main">
           <h1>上线批次</h1>
           <p className="list-lead">
             选择一个批次进入总体看板。主批次刻意做成「有风险」：3D 上传逾期并锁下游，家园文案临期，其它资源继续走。
@@ -365,7 +365,7 @@ export function App() {
       )}
 
       {view === "mine" && (
-        <div className="mine" id="main">
+        <div className="mine view-in" id="main">
           <Tabs
             activeKey={mineTab}
             onChange={(k) => setMineTab(k as "dri" | "confirm")}

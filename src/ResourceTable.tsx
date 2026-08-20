@@ -249,9 +249,22 @@ export function ResourceTable({
           }
           const lane = row.lane;
           const light = laneLight(lane);
+          const pg = progress(lane);
+          const done = pg.total > 0 && pg.done === pg.total;
+          const cur = currentItem(lane);
+          const badge =
+            light === "red"
+              ? "error"
+              : light === "yellow"
+                ? "warning"
+                : done
+                  ? "success"
+                  : cur.state === "in_progress" || cur.state === "submitted"
+                    ? "processing"
+                    : "default";
           return (
             <button type="button" className="res-name-hit" onClick={() => onOpen(currentItem(lane).id)}>
-              <Badge status={light === "red" ? "error" : light === "yellow" ? "warning" : "success"} />
+              <Badge status={badge} />
               <span className="res-name-copy">
                 <Ellipsis>{lane.name}</Ellipsis>
                 <Text type="secondary" className="res-name-type">
