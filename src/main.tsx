@@ -4,7 +4,7 @@ import { ConfigProvider } from "antd";
 import zhCN from "antd/locale/zh_CN";
 import "antd/dist/reset.css";
 import { App } from "./App";
-import { palette } from "./tokens";
+import { FONT_FAMILY, TYPE_SCALE, palette } from "./tokens";
 import "./styles.css";
 
 createRoot(document.getElementById("root")!).render(
@@ -28,13 +28,12 @@ createRoot(document.getElementById("root")!).render(
           controlHeight: 32,
           controlHeightSM: 28,
           controlHeightLG: 40,
-          fontSize: 14,
-          fontSizeSM: 12,
-          fontSizeLG: 16,
+          fontSize: TYPE_SCALE.lg,
+          fontSizeSM: TYPE_SCALE.md,
+          fontSizeLG: TYPE_SCALE.xl,
           fontSizeHeading4: 18,
           fontSizeHeading5: 15,
-          fontFamily:
-            '"IBM Plex Sans SC", "IBM Plex Sans", "PingFang SC", "Microsoft YaHei", sans-serif',
+          fontFamily: FONT_FAMILY,
           motionDurationFast: "0.16s",
           motionDurationMid: "0.22s",
           motionDurationSlow: "0.28s",
@@ -49,7 +48,6 @@ createRoot(document.getElementById("root")!).render(
             headerFontSize: 15,
           },
           Button: {
-            autoInsertSpace: false,
             fontWeight: 500,
             paddingInline: 14,
             paddingInlineSM: 10,

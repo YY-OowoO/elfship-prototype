@@ -1,4 +1,4 @@
-import { STAGES, TODAY } from "./mock";
+import { HOLIDAYS, PEOPLE, STAGES, TODAY } from "./mock";
 import type {
   AuditEvent,
   LaunchBatch,
@@ -12,8 +12,12 @@ import type {
 
 const TERMINAL: WorkState[] = ["confirmed", "skipped"];
 
-export function parseDay(iso: string): Date {
-  const [y, m, d] = iso.split("-").map(Number);
+export function parseDay(iso?: string): Date {
+  if (typeof iso !== "string") {
+    return new Date(TODAY);
+  }
+  const target = /^\d{4}-\d{2}-\d{2}$/.test(iso) ? iso : TODAY;
+  const [y, m, d] = target.split("-").map(Number);
   return new Date(y, m - 1, d);
 }
 
@@ -40,7 +44,7 @@ export function listWorkdays(fromIso: string, untilIso: string): string[] {
   const dir = cur <= end ? 1 : -1;
   while (dir > 0 ? cur <= end : cur >= end) {
     const iso = toIso(cur);
-    if (!isWeekend(iso)) out.push(iso);
+    if (isWorkday(iso)) out.push(iso);
     cur.setDate(cur.getDate() + dir);
   }
   return out;
@@ -51,16 +55,23 @@ export function isWeekend(iso: string): boolean {
   return day === 0 || day === 6;
 }
 
-export function workdaysBetween(fromIso: string, toIso: string): number {
+export function isHoliday(iso: string): boolean {
+  return HOLIDAYS.has(iso);
+}
+
+export function isWorkday(iso: string): boolean {
+  return !isWeekend(iso) && !isHoliday(iso);
+}
+
+export function workdaysBetween(fromIso: string, untilIso: string): number {
   const from = parseDay(fromIso);
-  const to = parseDay(toIso);
+  const to = parseDay(untilIso);
   const step = from <= to ? 1 : -1;
   let count = 0;
   const cur = new Date(from);
   cur.setDate(cur.getDate() + step);
   while (step > 0 ? cur <= to : cur >= to) {
-    const dow = cur.getDay();
-    if (dow !== 0 && dow !== 6) count += step;
+    if (isWorkday(toIso(cur))) count += step;
     cur.setDate(cur.getDate() + step);
   }
   return count;
@@ -72,13 +83,9 @@ export function addWorkdays(fromIso: string, n: number): string {
   const dir = n >= 0 ? 1 : -1;
   while (left > 0) {
     cur.setDate(cur.getDate() + dir);
-    const dow = cur.getDay();
-    if (dow !== 0 && dow !== 6) left -= 1;
+    if (isWorkday(toIso(cur))) left -= 1;
   }
-  const y = cur.getFullYear();
-  const m = String(cur.getMonth() + 1).padStart(2, "0");
-  const d = String(cur.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
+  return toIso(cur);
 }
 
 export function itemLight(item: WorkItem, today = TODAY): Light {
@@ -462,6 +469,7 @@ export function canSubmit(item: WorkItem, actor: PersonId): string | null {
 export function canConfirm(item: WorkItem, actor: PersonId): string | null {
   if (item.state !== "submitted") return "需主责先提交";
   if (actor !== item.confirmerId) return "只有确认人可以确认";
+  if (item.confirmerId === item.driId) return "确认人与主责不能是同一人";
   if (item.completeWhen.some((g) => !g.ok) || item.enterNextWhen.some((g) => !g.ok)) {
     return "完成条件或流转条件未满足";
   }
@@ -471,6 +479,7 @@ export function canConfirm(item: WorkItem, actor: PersonId): string | null {
 export function canReject(item: WorkItem, actor: PersonId, reason: string): string | null {
   if (item.state !== "submitted" && item.state !== "in_progress") return "当前状态不能退回";
   if (actor !== item.confirmerId) return "只有确认人可以退回";
+  if (item.confirmerId === item.driId) return "确认人与主责不能是同一人";
   if (reason.trim().length < 4) return "退回必须填写原因";
   return null;
 }
@@ -559,8 +568,9 @@ export function shiftLaunchDate(batch: LaunchBatch, nextLaunch: string, actor: P
     lanes: batch.lanes.map((lane) => ({
       ...lane,
       items: lane.items.map((it) => {
-        if (TERMINAL.includes(it.state)) return it;
+        if (TERMINAL.includes(it.state) || it.duePinned) return it;
         const dueAt = addWorkdays(it.dueAt, delta);
+        if (dueAt === it.dueAt) return it;
         return {
           ...it,
           dueAt,
@@ -574,10 +584,170 @@ export function shiftLaunchDate(batch: LaunchBatch, nextLaunch: string, actor: P
   });
 }
 
+export type ShiftPreviewRow = {
+  laneName: string;
+  stageName: string;
+  item: WorkItem;
+  oldDue: string;
+  newDue: string;
+};
+
+export function previewShift(batch: LaunchBatch, nextLaunch: string): {
+  moved: ShiftPreviewRow[];
+  kept: number;
+} {
+  const delta = workdaysBetween(batch.launchDate, nextLaunch);
+  const moved: ShiftPreviewRow[] = [];
+  let kept = 0;
+  for (const lane of batch.lanes) {
+    for (const it of lane.items) {
+      if (TERMINAL.includes(it.state) || it.duePinned) {
+        kept += 1;
+        continue;
+      }
+      const newDue = addWorkdays(it.dueAt, delta);
+      if (newDue === it.dueAt) {
+        kept += 1;
+        continue;
+      }
+      moved.push({
+        laneName: lane.name,
+        stageName: STAGES.find((s) => s.key === it.stage)?.name ?? it.stage,
+        item: it,
+        oldDue: it.dueAt,
+        newDue,
+      });
+    }
+  }
+  return { moved, kept };
+}
+
+export function togglePin(batch: LaunchBatch, itemId: string, actor: PersonId): LaunchBatch {
+  return mapItem(batch, itemId, (it) => {
+    if (TERMINAL.includes(it.state)) return it;
+    const duePinned = !it.duePinned;
+    return {
+      ...it,
+      duePinned,
+      history: [
+        ...it.history,
+        stamp(actor, duePinned ? "钉死截止日期（改期时不随动）" : "取消钉死截止日期", it.state, it.state),
+      ],
+    };
+  });
+}
+
 export function findItem(batch: LaunchBatch, itemId: string): { lane: ResourceLane; item: WorkItem } | null {
   for (const lane of batch.lanes) {
     const item = lane.items.find((it) => it.id === itemId);
     if (item) return { lane, item };
   }
   return null;
+}
+
+export function findBlockedDownstream(
+  batch: LaunchBatch,
+  blockerLaneId: string,
+): { blockedLaneIds: string[]; blockedItemIds: string[]; reason: string } {
+  const lane = batch.lanes.find((l) => l.id === blockerLaneId);
+  if (!lane) return { blockedLaneIds: [], blockedItemIds: [], reason: "" };
+
+  const cur = currentItem(lane);
+  const isBlocking = cur && (cur.locked || lane.items.some((x) => x.locked) || itemLight(cur) === "red");
+  if (!isBlocking) return { blockedLaneIds: [], blockedItemIds: [], reason: "" };
+
+  const blockedLaneIds: string[] = [];
+  const blockedItemIds: string[] = [];
+
+  // Downstream items within the same lane that are locked
+  for (const it of lane.items) {
+    if (it.locked || (it.stage !== cur.stage && isBlocking)) {
+      blockedItemIds.push(it.id);
+    }
+  }
+  blockedLaneIds.push(lane.id);
+
+  // Downstream dependent lanes (e.g., if 3D model blocks downstream assembly/review)
+  for (const otherLane of batch.lanes) {
+    if (otherLane.id === blockerLaneId) continue;
+    const otherCur = currentItem(otherLane);
+    if (otherCur && (otherCur.locked || otherLane.items.some((x) => x.locked))) {
+      blockedLaneIds.push(otherLane.id);
+      blockedItemIds.push(otherCur.id);
+    }
+  }
+
+  return {
+    blockedLaneIds: Array.from(new Set(blockedLaneIds)),
+    blockedItemIds: Array.from(new Set(blockedItemIds)),
+    reason: `【${lane.name}】阻塞了下游节点流转`,
+  };
+}
+
+export function stateSymbol(state: WorkState, light?: Light): string {
+  if (light === "red") return "!";
+  if (light === "yellow") return "~";
+  if (state === "confirmed") return "OK";
+  if (state === "submitted") return "WAIT";
+  return "•";
+}
+
+export function generateNudgeMessage(item: WorkItem, lane: ResourceLane, batch: LaunchBatch): string {
+  const dri = PEOPLE[item.driId]?.name ?? item.driId;
+  const stageName = STAGES.find((s) => s.key === item.stage)?.name ?? item.stage;
+  const diff = workdaysBetween(TODAY, item.dueAt);
+  const statusStr = diff < 0 ? `已逾期 ${Math.abs(diff)} 个工作日` : diff === 0 ? "今天截止" : `剩余 ${diff} 个工作日`;
+  const downstream = findBlockedDownstream(batch, lane.id);
+  const blockCount = downstream.blockedItemIds.length;
+
+  return [
+    `【精灵交付 · 催办推进提醒】`,
+    `· 交付资源：${lane.name}（${lane.type}）`,
+    `· 当前节点：${stageName}`,
+    `· 责任人：@${dri}`,
+    `· 截止日期：${formatDay(item.dueAt)}（${statusStr}）`,
+    blockCount > 1 ? `· 连带影响：当前锁定下游 ${blockCount} 项关联验收` : "",
+    `· 请尽快提交或推进交付物，确保批次【${batch.name}】按期交付。`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+export function groupLanesByDri(lanes: ResourceLane[]) {
+  const map = new Map<PersonId, Array<{ lane: ResourceLane; item: WorkItem }>>();
+  for (const lane of lanes) {
+    const cur = currentItem(lane);
+    if (!cur) continue;
+    const list = map.get(cur.driId) ?? [];
+    list.push({ lane, item: cur });
+    map.set(cur.driId, list);
+  }
+  return [...map.entries()].map(([driId, rows]) => ({
+    key: driId,
+    title: PEOPLE[driId]?.name ?? driId,
+    sub: PEOPLE[driId]?.title ?? "负责人",
+    rows,
+    done: rows.filter((r) => r.item.state === "confirmed").length,
+    total: rows.length,
+  }));
+}
+
+export function groupLanesByType(lanes: ResourceLane[]) {
+  const map = new Map<string, Array<{ lane: ResourceLane; item: WorkItem }>>();
+  for (const lane of lanes) {
+    const cur = currentItem(lane);
+    if (!cur) continue;
+    const typeGroup = lane.type.startsWith("2D") ? "平面资源" : lane.type.startsWith("3D") ? "3D 道具" : lane.type;
+    const list = map.get(typeGroup) ?? [];
+    list.push({ lane, item: cur });
+    map.set(typeGroup, list);
+  }
+  return [...map.entries()].map(([typeGroup, rows]) => ({
+    key: typeGroup,
+    title: typeGroup,
+    sub: `${rows.length} 项资源`,
+    rows,
+    done: rows.filter((r) => r.item.state === "confirmed").length,
+    total: rows.length,
+  }));
 }

@@ -2,6 +2,32 @@ import type { LaunchBatch, Person, PersonId, ResourceLane, StageDef, StageKey, W
 
 export const TODAY = "2026-08-18";
 
+/**
+ * 中国法定假日（可编辑日历，P0 口径）。只列法定假日当天；
+ * 演示窗口 7/27–8/26 内无假日，不影响现有场景。
+ */
+export const HOLIDAYS: ReadonlySet<string> = new Set([
+  "2026-01-01",
+  "2026-02-17",
+  "2026-02-18",
+  "2026-02-19",
+  "2026-02-20",
+  "2026-02-21",
+  "2026-02-22",
+  "2026-02-23",
+  "2026-04-05",
+  "2026-05-01",
+  "2026-06-19",
+  "2026-09-25",
+  "2026-10-01",
+  "2026-10-02",
+  "2026-10-03",
+  "2026-10-04",
+  "2026-10-05",
+  "2026-10-06",
+  "2026-10-07",
+]);
+
 export const STAGES: StageDef[] = [
   { key: "launch", short: "上新", name: "上新时间表", color: "#52c41a" },
   { key: "schedule", short: "排期", name: "制片排期表", color: "#1677ff" },

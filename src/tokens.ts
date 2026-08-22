@@ -1,3 +1,24 @@
+/**
+ * 全站统一标准字体：系统字体栈，不引入任何外部字体文件。
+ * antd ConfigProvider 与 styles.css 的 --font 都从这里取值，禁止两处各写一套。
+ */
+export const FONT_FAMILY =
+  '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", Helvetica, Arial, sans-serif';
+
+/** 数字/日期等对齐场景的标准等宽字体栈，对应 styles.css 的 --mono。 */
+export const FONT_FAMILY_MONO =
+  '"SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace';
+
+/** 统一字号阶梯（px）。正文/标签只用这些档位，禁止 9.5px 之类的碎档。 */
+export const TYPE_SCALE = {
+  xs: 10,
+  sm: 11,
+  md: 12,
+  base: 13,
+  lg: 14,
+  xl: 16,
+} as const;
+
 /** Ant Design 6 default seed / preset colors. */
 export const palette = {
   blue: "#1677ff",

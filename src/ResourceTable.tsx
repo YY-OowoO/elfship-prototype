@@ -1,10 +1,11 @@
-import { Badge, Button, Empty, Segmented, Space, Table, Tag, Tooltip, Typography } from "antd";
+import { Badge, Button, Checkbox, Empty, Segmented, Space, Table, Tag, Tooltip, Typography } from "antd";
 import type { TableColumnsType } from "antd";
+import { InboxOutlined } from "@ant-design/icons";
 import { useEffect, useMemo, useState } from "react";
 import { PEOPLE, STAGES, TODAY } from "./mock";
 import { currentItem, formatDay, itemLight, laneLight, progress, stateLabel, workdaysBetween } from "./logic";
 import type { Light, ResourceLane, StageKey, WorkItem } from "./types";
-import { Ellipsis, avatar } from "./ui";
+import { Ellipsis, EvidenceQuickPeek, avatar } from "./ui";
 
 const { Text } = Typography;
 
@@ -183,9 +184,21 @@ function buildRows(
 export function ResourceTable({
   lanes,
   onOpen,
+  selectedLaneIds = [],
+  onSelectLane,
+  onSelectAllLanes,
+  hoveredDate,
+  hoveredLaneId,
+  setHoveredLaneId,
 }: {
   lanes: ResourceLane[];
   onOpen: (id: string) => void;
+  selectedLaneIds?: string[];
+  onSelectLane?: (laneId: string, selected: boolean) => void;
+  onSelectAllLanes?: (selected: boolean) => void;
+  hoveredDate?: string | null;
+  hoveredLaneId?: string | null;
+  setHoveredLaneId?: (id: string | null) => void;
 }) {
   const [hereOnly, setHereOnly] = useState<StageKey | null>(null);
   const [typeFilter, setTypeFilter] = useState<string | null>(null);
@@ -226,13 +239,40 @@ export function ResourceTable({
     });
   const canFold = mode === "stage" && !hereOnly && presentStages.length > 1;
 
+  const allSelected = lanes.length > 0 && selectedLaneIds.length === lanes.length;
+  const isIndeterminate = selectedLaneIds.length > 0 && selectedLaneIds.length < lanes.length;
+
   const columns = useMemo<TableColumnsType<ResRow>>(() => {
     const showStage = mode === "risk" || Boolean(hereOnly);
     return [
       {
+        key: "select",
+        width: 38,
+        onCell: (row) => (row.kind === "group" || row.kind === "more" ? { colSpan: 0 } : {}),
+        title: onSelectAllLanes ? (
+          <Checkbox
+            indeterminate={isIndeterminate}
+            checked={allSelected}
+            onChange={(e) => onSelectAllLanes(e.target.checked)}
+          />
+        ) : null,
+        render: (_, row) => {
+          if (row.kind !== "lane") return null;
+          const isSelected = selectedLaneIds.includes(row.lane.id);
+          return (
+            <div onClick={(e) => e.stopPropagation()}>
+              <Checkbox
+                checked={isSelected}
+                onChange={(e) => onSelectLane?.(row.lane.id, e.target.checked)}
+              />
+            </div>
+          );
+        },
+      },
+      {
         key: "name",
         title: "资源",
-        onCell: (row) => (row.kind === "group" || row.kind === "more" ? { colSpan: 4 } : {}),
+        onCell: (row) => (row.kind === "group" || row.kind === "more" ? { colSpan: 5 } : {}),
         render: (_, row) => {
           if (row.kind === "more") {
             return <span className="res-more">还有 {row.rest} 条</span>;
@@ -329,7 +369,7 @@ export function ResourceTable({
         },
       },
     ];
-  }, [hereOnly, mode, onOpen]);
+  }, [allSelected, isIndeterminate, hereOnly, mode, onOpen, onSelectAllLanes, onSelectLane, selectedLaneIds]);
 
   const filterLabel = (() => {
     const total = lanes.length;
@@ -398,16 +438,24 @@ export function ResourceTable({
           }
           return {
             onClick: (event) => {
-              if ((event.target as HTMLElement).closest("button")) return;
+              if ((event.target as HTMLElement).closest("button") || (event.target as HTMLElement).closest(".ant-checkbox-wrapper")) return;
               onOpen(currentItem(row.lane).id);
             },
+            onMouseEnter: () => setHoveredLaneId?.(row.lane.id),
+            onMouseLeave: () => setHoveredLaneId?.(null),
           };
         }}
-        rowClassName={(row) => {
+        rowClassName={(row, index) => {
+          const baseIndex = index >= 36 ? " res-row-no-anim" : "";
           if (row.kind === "group") return `res-row-group tone-${row.tone}${row.open ? "" : " is-shut"}`;
           if (row.kind === "more") return "res-row-more";
+          const cur = currentItem(row.lane);
           const light = laneLight(row.lane);
-          return light === "red" ? "res-row-risk" : light === "yellow" ? "res-row-watch" : "";
+          const tone = light === "red" ? "res-row-risk" : light === "yellow" ? "res-row-watch" : "";
+          const isFocused = hoveredLaneId === row.lane.id ? " is-row-focused" : "";
+          const isDateFocus = hoveredDate ? (cur.dueAt === hoveredDate ? " is-date-focus" : " is-date-dimmed") : "";
+          const isSelected = selectedLaneIds.includes(row.lane.id) ? " is-row-selected" : "";
+          return `${tone}${baseIndex}${isFocused}${isDateFocus}${isSelected}`;
         }}
         locale={{
           emptyText: (
@@ -562,6 +610,11 @@ function LanePath({ lane, onOpen }: { lane: ResourceLane; onOpen: (id: string) =
           );
         })}
       </ol>
+      {cur.evidence?.svnPath ? (
+        <EvidenceQuickPeek evidence={cur.evidence}>
+          <InboxOutlined className="lane-path-svn" style={{ color: "var(--wip)" }} title="悬停抽检交付物 SVN 资产" />
+        </EvidenceQuickPeek>
+      ) : null}
     </div>
   );
 }

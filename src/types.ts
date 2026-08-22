@@ -78,6 +78,8 @@ export type WorkItem = {
   state: WorkState;
   dueAt: string;
   offsetLabel: string;
+  /** 钉死截止日期：改上线日时不随动重算 */
+  duePinned?: boolean;
   driId: PersonId;
   confirmerId: PersonId;
   collabIds: PersonId[];
@@ -109,3 +111,10 @@ export type LaunchBatch = {
 export type View = "list" | "board" | "mine";
 export type BoardPane = "flow" | "queue" | "resources";
 export type MineTab = "dri" | "confirm";
+export type DensityMode = "normal" | "compact";
+export type SwimlaneDimension = "stage" | "dri" | "type";
+export type ChartRiskType = "done" | "risk" | "safe" | "blocked";
+export type ChartSubFilter = {
+  stage?: StageKey | null;
+  riskType?: ChartRiskType | null;
+};

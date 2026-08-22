@@ -32,11 +32,19 @@ export function BoardScroll({ children }: { children: ReactNode }) {
       );
     }, root);
 
-    const onResize = () => ScrollTrigger.refresh();
+    let raf = 0;
+    const onResize = () => {
+      if (raf) return;
+      raf = window.requestAnimationFrame(() => {
+        raf = 0;
+        ScrollTrigger.refresh();
+      });
+    };
     window.addEventListener("resize", onResize);
 
     return () => {
       window.removeEventListener("resize", onResize);
+      if (raf) window.cancelAnimationFrame(raf);
       ctx.revert();
     };
   }, []);
