@@ -26,9 +26,12 @@ import {
   ThunderboltOutlined,
   SearchOutlined,
   ExperimentOutlined,
-  RiseOutlined
+  RiseOutlined,
+  DragOutlined,
+  UndoOutlined,
+  EyeInvisibleOutlined
 } from '@ant-design/icons';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence, useMotionValue, useMotionValueEvent } from 'motion/react';
 import { EmotionBall } from './EmotionBall';
 import { EmotionBallConfig } from './engine';
 import { elfBus, type ElfEvent } from './events';
@@ -44,6 +47,7 @@ interface ElfCompanionProps {
   riskText?: string;
   onTriggerNudge?: () => void;
   onOpenSearch?: () => void;
+  forceHide?: boolean;
 }
 
 export function ElfCompanion({
@@ -51,9 +55,11 @@ export function ElfCompanion({
   riskLevel = 'ok',
   riskText,
   onTriggerNudge,
-  onOpenSearch
+  onOpenSearch,
+  forceHide = false,
 }: ElfCompanionProps) {
   const ballRef = useRef<EmotionBallInstance>(null);
+  const constraintsRef = useRef<HTMLDivElement>(null);
   const [currentEmotion, setCurrentEmotion] = useState('02');
   const [shape, setShape] = useState<ShapeType>('blob');
   const [sketch, setSketch] = useState(false);
@@ -63,6 +69,57 @@ export function ElfCompanion({
   const [activeGroup, setActiveGroup] = useState<string>('all');
   const [customMsg, setCustomMsg] = useState('{"emotionId":"30","tips":"正在根据排期模型评估各资源阻塞风险..."}');
   const [isMinimized, setIsMinimized] = useState(false);
+  const [isHidden, setIsHidden] = useState(false);
+
+  // Free dragging coordinates and viewport constraints
+  const x = useMotionValue(0);
+  const y = useMotionValue(0);
+  const [isLeft, setIsLeft] = useState(false);
+  const [isTop, setIsTop] = useState(false);
+  const [hasMoved, setHasMoved] = useState(false);
+  const isDraggingRef = useRef(false);
+
+  useMotionValueEvent(x, 'change', (latestX) => {
+    if (typeof window !== 'undefined') {
+      const ballWidth = isMinimized ? 54 : 90;
+      const currentLeft = window.innerWidth - 28 - ballWidth + latestX;
+      setIsLeft(currentLeft < 340 || currentLeft < window.innerWidth * 0.45);
+    }
+  });
+
+  useMotionValueEvent(y, 'change', (latestY) => {
+    if (typeof window !== 'undefined') {
+      const ballHeight = isMinimized ? 54 : 90;
+      const currentTop = window.innerHeight - 24 - ballHeight + latestY;
+      setIsTop(currentTop < 240);
+    }
+  });
+
+  useEffect(() => {
+    const handleResize = () => {
+      if (typeof window !== 'undefined') {
+        const ballSize = isMinimized ? 54 : 90;
+        const minX = -window.innerWidth + ballSize + 44;
+        const minY = -window.innerHeight + ballSize + 40;
+        if (x.get() < minX) x.set(minX);
+        if (x.get() > 12) x.set(12);
+        if (y.get() < minY) y.set(minY);
+        if (y.get() > 8) y.set(8);
+      }
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [isMinimized, x, y]);
+
+  const handleResetPosition = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    x.set(0);
+    y.set(0);
+    setIsLeft(false);
+    setIsTop(false);
+    setHasMoved(false);
+    message.info('精灵球已复位至右下角');
+  };
 
   const allEmotions = useMemo(() => EmotionBallConfig.list(), []);
 
@@ -108,6 +165,15 @@ export function ElfCompanion({
             ballRef.current?.setEmotion('11'); // 关注审核
             setCurrentEmotion('11');
             break;
+          case 'gate_completed':
+            ballRef.current?.setEmotion('33'); // 门禁齐备开心
+            setCurrentEmotion('33');
+            ballRef.current?.spin(1);
+            break;
+          case 'evidence_filled':
+            ballRef.current?.setEmotion('30'); // 专注运转
+            setCurrentEmotion('30');
+            break;
           case 'nudge_sent':
             ballRef.current?.setEmotion('17'); // 警惕催办
             setCurrentEmotion('17');
@@ -137,6 +203,16 @@ export function ElfCompanion({
             ballRef.current?.setEmotion('02');
             setCurrentEmotion('02');
             break;
+          case 'holiday_egg':
+            ballRef.current?.setEmotion('33'); // 庆祝
+            setCurrentEmotion('33');
+            ballRef.current?.burst(32);
+            if (evt.message) {
+              setTipsText(evt.message);
+              setIsMinimized(false);
+              setIsHidden(false);
+            }
+            break;
           case 'diagnosis_requested':
             handleRunDiagnosis();
             break;
@@ -157,13 +233,10 @@ export function ElfCompanion({
 
     if (riskLevel === 'risk') {
       ballRef.current?.setEmotion('34'); // 出错/告警
-      setTipsText(riskText || '检测到主链路存在逾期阻塞，请及时处理红灯资源。');
     } else if (riskLevel === 'watch') {
       ballRef.current?.setEmotion('11'); // 疑惑/关注
-      setTipsText(riskText || '部分资源节点临期，建议留意交付排期。');
     } else {
       ballRef.current?.setEmotion('02'); // 待机放空
-      setTipsText('所有交付项正常推进中，交付精灵已就绪。');
     }
   }, [riskLevel, riskText, touring]);
 
@@ -282,126 +355,227 @@ export function ElfCompanion({
 
   return (
     <>
-      {/* Floating Widget at Bottom-Right */}
-      <div className="elf-companion-dock">
-        {/* Speech Bubble */}
-        <AnimatePresence>
-          {tipsText && !isMinimized && (
-            <motion.div
-              className="elf-bubble"
-              initial={{ opacity: 0, y: 10, scale: 0.94 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 6, scale: 0.96 }}
-              transition={{ duration: 0.2 }}
-            >
-              <div className="elf-bubble-header">
-                <span className="elf-bubble-title">
-                  <RobotOutlined style={{ color: 'var(--brand-primary, #1677ff)' }} /> 交付精灵 · {activeDef.name}
-                </span>
-                <Button
-                  type="text"
-                  size="small"
-                  icon={<CloseOutlined style={{ fontSize: 10 }} />}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setTipsText(null);
-                  }}
-                  className="elf-bubble-close"
-                />
-              </div>
-              <div className="elf-bubble-body">{tipsText}</div>
-              <div className="elf-bubble-actions">
-                {onOpenSearch && (
-                  <Button size="small" type="link" icon={<SearchOutlined />} onClick={onOpenSearch} style={{ padding: '0 4px', fontSize: 12 }}>
-                    搜索
-                  </Button>
-                )}
-                <Button size="small" type="link" icon={<RiseOutlined />} onClick={handleRunDiagnosis} style={{ padding: '0 4px', fontSize: 12 }}>
-                  诊断
-                </Button>
-                {riskLevel === 'risk' && onTriggerNudge && (
-                  <Button size="small" type="primary" danger icon={<ThunderboltOutlined />} onClick={onTriggerNudge} style={{ fontSize: 12 }}>
-                    催办
-                  </Button>
-                )}
-                <Button size="small" type="default" icon={<SettingOutlined />} onClick={() => setWorkshopOpen(true)} style={{ fontSize: 12 }}>
-                  工坊
-                </Button>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+      {/* Fullscreen viewport boundary reference container (Hard Inset 16px) */}
+      <div
+        ref={constraintsRef}
+        style={{
+          position: 'fixed',
+          inset: 16,
+          pointerEvents: 'none',
+          zIndex: 1049,
+        }}
+      />
 
-        {/* Emotion Ball Avatar Card */}
-        <motion.div
-          className={`elf-companion-avatar ${isMinimized ? 'is-minimized' : ''}`}
-          whileHover={{ scale: 1.04 }}
-          whileTap={{ scale: 0.97 }}
-          onMouseEnter={() => {
-            if (!tipsText) {
-              setTipsText(riskLevel === 'risk' ? (riskText || '检测到主链路存在逾期阻塞，请及时处理红灯资源。') : '所有交付项推进中，点击打开工坊或直接拖拽卡片流转。');
-            }
-          }}
-        >
-          <div
-            className="elf-ball-wrapper"
-            onClick={() => {
-              if (isMinimized) {
-                setIsMinimized(false);
-              } else {
-                setWorkshopOpen(true);
-              }
+      <AnimatePresence>
+        {!isHidden && !forceHide ? (
+          /* Floating Widget - Freely Draggable Across Screen */
+          <motion.div
+            key="elf-dock"
+            className={`elf-companion-dock ${isMinimized ? 'is-minimized' : ''} ${isLeft ? 'is-left' : ''} ${isTop ? 'is-top' : ''}`}
+            style={{ x, y }}
+            drag
+            dragConstraints={constraintsRef}
+            dragElastic={0}
+            dragMomentum={false}
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.8, transition: { duration: 0.15 } }}
+            onDragStart={() => {
+              isDraggingRef.current = true;
+            }}
+            onDragEnd={() => {
+              setTimeout(() => {
+                isDraggingRef.current = false;
+              }, 60);
+              setHasMoved(true);
             }}
           >
-            <EmotionBall
-              ref={ballRef}
-              emotion={currentEmotion}
-              shape={shape}
-              size={isMinimized ? 48 : 80}
-              sketch={sketch ? 1 : 0}
-              interactive={true}
-              idle={true}
-              onEmotionChange={({ id }) => setCurrentEmotion(id)}
-              onTips={({ text }) => setTipsText(text)}
-            />
-          </div>
+            {/* Speech Bubble */}
+            <AnimatePresence>
+              {tipsText && !isMinimized && (
+                <motion.div
+                  className={`elf-bubble ${isLeft ? 'is-left' : ''} ${isTop ? 'is-top' : ''}`}
+                  initial={{ opacity: 0, y: isTop ? -10 : 10, scale: 0.94 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: isTop ? -6 : 6, scale: 0.96 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  <div className="elf-bubble-header">
+                    <span className="elf-bubble-title">
+                      <RobotOutlined style={{ color: 'var(--brand-primary, #1677ff)' }} /> 交付精灵 · {activeDef.name}
+                    </span>
+                    <Button
+                      type="text"
+                      size="small"
+                      icon={<CloseOutlined style={{ fontSize: 10 }} />}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setTipsText(null);
+                      }}
+                      className="elf-bubble-close"
+                    />
+                  </div>
+                  <div className="elf-bubble-body">{tipsText}</div>
+                  <div className="elf-bubble-actions">
+                    {onOpenSearch && (
+                      <Button size="small" type="link" icon={<SearchOutlined />} onClick={onOpenSearch} style={{ padding: '0 4px', fontSize: 12 }}>
+                        搜索
+                      </Button>
+                    )}
+                    <Button size="small" type="link" icon={<RiseOutlined />} onClick={handleRunDiagnosis} style={{ padding: '0 4px', fontSize: 12 }}>
+                      诊断
+                    </Button>
+                    {riskLevel === 'risk' && onTriggerNudge && (
+                      <Button size="small" type="primary" danger icon={<ThunderboltOutlined />} onClick={onTriggerNudge} style={{ fontSize: 12 }}>
+                        催办
+                      </Button>
+                    )}
+                    <Button size="small" type="default" icon={<SettingOutlined />} onClick={() => setWorkshopOpen(true)} style={{ fontSize: 12 }}>
+                      工坊
+                    </Button>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
 
-          <div className="elf-companion-toolbar">
-            <Tooltip title={isMinimized ? '展开' : '最小化'}>
-              <button
-                type="button"
-                className="elf-mini-btn"
-                onClick={() => setIsMinimized(!isMinimized)}
+            {/* Emotion Ball Avatar Card */}
+            <motion.div
+              className={`elf-companion-avatar ${isMinimized ? 'is-minimized' : ''} ${hasMoved ? 'is-floating' : ''}`}
+              whileHover={{ scale: 1.04 }}
+              whileTap={{ scale: 0.97 }}
+              whileDrag={{ scale: 1.06, cursor: 'grabbing' }}
+              title="按住可自由拖拽改变屏幕位置 · 双击或使用工具栏可复位"
+              onDoubleClick={handleResetPosition}
+              onMouseEnter={() => {
+                if (!tipsText) {
+                  setTipsText(riskLevel === 'risk' ? (riskText || '检测到主链路存在逾期阻塞，请及时处理红灯资源。') : '所有交付项推进中，按住小球可任意拖拽改变位置。');
+                }
+              }}
+              onMouseLeave={() => {
+                setTimeout(() => {
+                  setTipsText(null);
+                }, 3000);
+              }}
+            >
+              <div
+                className="elf-ball-wrapper"
+                onClick={() => {
+                  if (isDraggingRef.current) return;
+                  if (isMinimized) {
+                    setIsMinimized(false);
+                  } else {
+                    setWorkshopOpen(true);
+                  }
+                }}
               >
-                {isMinimized ? <ExpandOutlined /> : <CompressOutlined />}
-              </button>
-            </Tooltip>
-            {!isMinimized && (
-              <>
-                <Tooltip title="自旋彩带">
-                  <button type="button" className="elf-mini-btn" onClick={handleSpin}>
-                    <SyncOutlined />
-                  </button>
-                </Tooltip>
-                <Tooltip title="撒花效果">
-                  <button type="button" className="elf-mini-btn" onClick={handleBurst}>
-                    <StarOutlined />
-                  </button>
-                </Tooltip>
-                <Tooltip title="工坊面板">
+                <EmotionBall
+                  ref={ballRef}
+                  emotion={currentEmotion}
+                  shape={shape}
+                  size={isMinimized ? 48 : 80}
+                  sketch={sketch ? 1 : 0}
+                  interactive={true}
+                  idle={true}
+                  onEmotionChange={({ id }) => setCurrentEmotion(id)}
+                  onTips={({ text }) => setTipsText(text)}
+                />
+              </div>
+
+              <div className="elf-companion-toolbar">
+                {hasMoved ? (
+                  <Tooltip title="复位到右下角">
+                    <button
+                      type="button"
+                      className="elf-mini-btn is-reset"
+                      onClick={handleResetPosition}
+                    >
+                      <UndoOutlined />
+                    </button>
+                  </Tooltip>
+                ) : (
+                  <Tooltip title="可按住小球自由拖拽至屏幕任意位置">
+                    <button
+                      type="button"
+                      className="elf-mini-btn"
+                      style={{ cursor: 'grab' }}
+                    >
+                      <DragOutlined />
+                    </button>
+                  </Tooltip>
+                )}
+                <Tooltip title={isMinimized ? '展开' : '最小化'}>
                   <button
                     type="button"
-                    className="elf-mini-btn primary"
-                    onClick={() => setWorkshopOpen(true)}
+                    className="elf-mini-btn"
+                    onClick={() => setIsMinimized(!isMinimized)}
                   >
-                    <SettingOutlined />
+                    {isMinimized ? <ExpandOutlined /> : <CompressOutlined />}
                   </button>
                 </Tooltip>
-              </>
-            )}
-          </div>
-        </motion.div>
-      </div>
+                {!isMinimized && (
+                  <>
+                    <Tooltip title="自旋彩带">
+                      <button type="button" className="elf-mini-btn" onClick={handleSpin}>
+                        <SyncOutlined />
+                      </button>
+                    </Tooltip>
+                    <Tooltip title="撒花效果">
+                      <button type="button" className="elf-mini-btn" onClick={handleBurst}>
+                        <StarOutlined />
+                      </button>
+                    </Tooltip>
+                    <Tooltip title="工坊面板">
+                      <button
+                        type="button"
+                        className="elf-mini-btn primary"
+                        onClick={() => setWorkshopOpen(true)}
+                      >
+                        <SettingOutlined />
+                      </button>
+                    </Tooltip>
+                  </>
+                )}
+                <Tooltip title="隐藏精灵 (可随时点击右下角唤出)">
+                  <button
+                    type="button"
+                    className="elf-mini-btn is-hide"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setIsHidden(true);
+                      message.info('交付精灵已隐藏，可随时点击右下角唤出。');
+                    }}
+                  >
+                    <EyeInvisibleOutlined />
+                  </button>
+                </Tooltip>
+              </div>
+            </motion.div>
+          </motion.div>
+        ) : (
+          /* Summon Pill Trigger */
+          <motion.button
+            key="elf-summon"
+            type="button"
+            className="elf-summon-trigger"
+            initial={{ opacity: 0, scale: 0.85, y: 10 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.85, y: 10 }}
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={() => {
+              setIsHidden(false);
+              message.success('交付精灵已唤出！');
+              setTimeout(() => {
+                ballRef.current?.spin(1);
+              }, 60);
+            }}
+            title="点击重新唤出交付精灵"
+          >
+            <RobotOutlined style={{ color: 'var(--brand-primary, #1677ff)', fontSize: 14 }} />
+            <span>唤出精灵</span>
+          </motion.button>
+        )}
+      </AnimatePresence>
 
       {/* Elf Emotion Workshop Modal */}
       <Modal

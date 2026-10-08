@@ -215,13 +215,7 @@ const ANIM_TYPES: Record<string, (a: AnimConfig, t: number, eng: EmotionEngine) 
     const ph = TAU * (((t + (a.phaseMs || 0)) % per) / per) + (a.phase || 0);
     return a.amp! * Math.tanh(2.8 * Math.sin(ph));
   },
-  blink: (a, t, eng) => {
-    const interval = a.interval || 3800;
-    const dur = a.dur || 200;
-    const p = (t + (a.phaseMs || 0) + (eng ? eng._seed * 97 : 0)) % interval;
-    if (p >= dur) return 0;
-    return -(a.depth == null ? 1 : a.depth) * Math.sin(Math.PI * (p / dur));
-  }
+  blink: () => 0
 };
 
 function applyAnim(pose: Pose, a: AnimConfig, t: number, eng: EmotionEngine) {
@@ -279,10 +273,27 @@ function validate(raw: any): string[] {
   return errs;
 }
 
+const SLIT_RINGS = new Set([2, 4, 7, 8, 13, 16, 21, 22]);
+
 function normalize(raw: EmotionRawConfig): NormalizedEmotionConfig {
   const base = applySpec(defaultPose(), raw);
-  let pool = (raw.pool || [0, 8]).filter((i) => i >= 0 && i < EXPRESSIONS.length);
-  if (!pool.length) pool = [0];
+  // 彻底去除闭眼与细缝眼：将所有闭眼/细缝眼环映射为正圆清醒大眼 9
+  let pool = (raw.pool || [0, 9])
+    .filter((i) => i >= 0 && i < EXPRESSIONS.length)
+    .map((i) => (SLIT_RINGS.has(i) ? 9 : i));
+  if (!pool.length) pool = [9];
+
+  // 保证基础姿势眼睛常睁不闭
+  base.left.open = Math.max(1, base.left.open ?? 1);
+  base.right.open = Math.max(1, base.right.open ?? 1);
+  base.left.scaleY = Math.max(0.85, base.left.scaleY ?? 1);
+  base.right.scaleY = Math.max(0.85, base.right.scaleY ?? 1);
+
+  // 过滤掉所有眨眼和闭眼动画
+  const anims = (raw.anims || [])
+    .filter((a) => a.type !== 'blink')
+    .map((a) => ({ ...a }));
+
   const def: NormalizedEmotionConfig = {
     id: raw.id,
     name: raw.name,
@@ -294,20 +305,28 @@ function normalize(raw: EmotionRawConfig): NormalizedEmotionConfig {
     pool,
     poolMs: raw.poolMs || [9000, 16000],
     poolSpeed: raw.poolSpeed || 6,
-    blinkMs: raw.blinkMs !== undefined ? raw.blinkMs : [6000, 14000],
-    openness: raw.openness != null ? raw.openness : 1,
+    blinkMs: null, // 彻底禁用眨眼调度计时器
+    openness: Math.max(1, raw.openness != null ? raw.openness : 1),
     antics: !!raw.antics,
     base,
-    anims: (raw.anims || []).map((a) => ({ ...a })),
+    anims,
     sequence: null,
     raw
   };
   if (raw.sequence) {
     const frames = raw.sequence.frames
-      .map((f) => ({
-        at: f.at || 0,
-        pose: applySpec(clonePose(base), f)
-      }))
+      .map((f) => {
+        const pose = applySpec(clonePose(base), f);
+        // 保证序列帧每一帧都为开眼状态，杜绝揉眼闭眼揉搓
+        pose.left.open = Math.max(1, pose.left.open ?? 1);
+        pose.right.open = Math.max(1, pose.right.open ?? 1);
+        pose.left.scaleY = Math.max(0.85, pose.left.scaleY ?? 1);
+        pose.right.scaleY = Math.max(0.85, pose.right.scaleY ?? 1);
+        return {
+          at: f.at || 0,
+          pose
+        };
+      })
       .sort((x, y) => x.at - y.at);
     def.sequence = { frames, settle: raw.sequence.settle || 'base' };
   }
@@ -447,6 +466,7 @@ export class EmotionEngine implements EmotionBallInstance {
   _lastActivity = performance.now();
   _idle: { standbyAfter: number; sleepAfter: number; standbyId: string; sleepId: string } | null;
   _interactive = true;
+  _noBlink = true;
   _containerEl: HTMLElement | null = null;
 
   constructor(target: HTMLElement | string, opts: EmotionBallOptions = {}) {
@@ -455,10 +475,16 @@ export class EmotionEngine implements EmotionBallInstance {
 
     this._containerEl = el;
     this._interactive = opts.interactive !== false;
+    this._noBlink = true; // 彻底去除闭眼动作与眨眼
+    this._ringSrc = [EXPRESSIONS[9][0], EXPRESSIONS[9][1]];
+    this._ringDst = [EXPRESSIONS[9][0], EXPRESSIONS[9][1]];
+    this._ringCur = this._ringDst;
+    this._exprIdx = 9;
     if (this._interactive) globalPointer.start();
 
     this.ball = createBall(el, {
       ...opts,
+      noBlink: true,
       lite: opts.lite != null ? opts.lite : opts.autostart === false
     });
     this._seed = Math.random() * 100;
@@ -471,7 +497,7 @@ export class EmotionEngine implements EmotionBallInstance {
         standbyAfter: 60000,
         sleepAfter: 180000,
         standbyId: '02',
-        sleepId: '00',
+        sleepId: '02', // 睡眠态也保持睁眼放空，绝不闭眼
         ...(opts.idle === true ? {} : opts.idle)
       };
     } else {
@@ -524,7 +550,6 @@ export class EmotionEngine implements EmotionBallInstance {
       if (!def) return false;
     }
     const now = performance.now();
-    const prevId = this._def ? this._def.id : null;
     this._prevPose = this._lastPose ? clonePose(this._lastPose) : null;
     this._def = def;
     this._emoStart = now;
@@ -536,10 +561,10 @@ export class EmotionEngine implements EmotionBallInstance {
     if (!o.auto) this._lastActivity = now;
 
     this._poolPos = 0;
-    this._setExpr(def.pool[0], def.poolSpeed >= 10 ? 10 : 8);
+    const p0 = SLIT_RINGS.has(def.pool[0]) ? 9 : def.pool[0];
+    this._setExpr(p0, def.poolSpeed >= 10 ? 10 : 8);
     this._poolNext = now + rand(def.poolMs[0], def.poolMs[1]);
-    if (prevId !== null && prevId !== def.id && def.blinkMs) this._blinkNow(now);
-    this._blinkNext = def.blinkMs ? now + rand(def.blinkMs[0], def.blinkMs[1]) : Infinity;
+    this._blinkNext = Infinity;
     this._anticNext = now + rand(2500, 5000);
 
     this._emit('change', { id: def.id, def, auto: !!o.auto });
@@ -639,7 +664,10 @@ export class EmotionEngine implements EmotionBallInstance {
     if (this._bounceAt < 0) this._bounceAt = performance.now();
   }
 
-  _setExpr(idx: number, speed = 7): void {
+  _setExpr(idx: number, speed: number): void {
+    if (this._noBlink && SLIT_RINGS.has(idx)) {
+      idx = 9; // 泳道禁止线条眼：精确拦截笑眼斜线/发呆横线/八字弯月线，映射为正圆大眼 9
+    }
     if (idx === this._exprIdx && this._ringSpring.x >= 0.999) return;
     const s = clamp(this._ringSpring.x, 0, 1);
     this._ringSrc = [
@@ -654,11 +682,9 @@ export class EmotionEngine implements EmotionBallInstance {
     this._exprIdx = idx;
   }
 
-  _blinkNow(t: number): void {
-    this._blinkQ.push({ at: t, v: 0.05 }, { at: t + 70, v: 0.05 }, { at: t + 150, v: 1.08 }, { at: t + 300, v: 1 });
-    if (Math.random() < 0.14) {
-      this._blinkQ.push({ at: t + 370, v: 0.05 }, { at: t + 480, v: 1 });
-    }
+  _blinkNow(_t: number): void {
+    // 永久去除闭眼动作与眨眼队列
+    return;
   }
 
   registerEmotion(raw: EmotionRawConfig) {
@@ -764,30 +790,27 @@ export class EmotionEngine implements EmotionBallInstance {
     if (this._active && now >= this._poolNext) {
       if (def.pool.length > 1) {
         this._poolPos = (this._poolPos + 1 + Math.floor(rand(0, def.pool.length - 1))) % def.pool.length;
-        this._setExpr(def.pool[this._poolPos], def.poolSpeed);
+        let pIdx = def.pool[this._poolPos];
+        if (this._noBlink && SLIT_RINGS.has(pIdx)) {
+          pIdx = 9;
+        }
+        this._setExpr(pIdx, def.poolSpeed);
       }
       this._poolNext = now + rand(def.poolMs[0], def.poolMs[1]);
     }
 
-    /* 眨眼调度 */
-    if (this._active && def.blinkMs && now >= this._blinkNext) {
-      this._blinkNow(now);
-      this._blinkNext = now + rand(def.blinkMs[0], def.blinkMs[1]);
-    }
-    let openKey: number | null = null;
-    while (this._blinkQ.length && now >= this._blinkQ[0].at) {
-      openKey = this._blinkQ[0].v;
-      this._blinkQ.shift();
-    }
-    this._open.t = openKey != null ? openKey : this._blinkQ.length ? this._open.t : def.openness;
+    /* 眨眼调度 - 完全去除闭眼动作，保持常睁状态 */
+    this._blinkQ.length = 0;
+    this._open.t = 1;
+    this._open.x = 1;
+    this._open.v = 0;
 
-    /* 待机小动作 */
+    /* 待机小动作 - 仅保留自旋与弹跳，去除闭眼 */
     if (this._active && def.antics && now >= this._anticNext) {
       if (!this._spin && this._bounceAt < 0) {
         const pick = Math.random();
-        if (pick < 0.45) this.spin(1);
-        else if (pick < 0.8) this.bounce();
-        else this._blinkNow(now);
+        if (pick < 0.5) this.spin(1);
+        else this.bounce();
       }
       this._anticNext = now + rand(9000, 18000);
     }
@@ -872,14 +895,13 @@ export class EmotionEngine implements EmotionBallInstance {
       if (pose.right.color === DEFAULT_EYE.color) pose.right.color = this._theme.eyes;
     }
 
-    /* 开合度 */
-    const openS = clamp(this._open.x, 0.02, 1.5);
-    pose.left.open = clamp(pose.left.open, 0, 1.3) * openS;
-    pose.right.open = clamp(pose.right.open, 0, 1.3) * openS;
-    pose.left.scaleX = Math.max(pose.left.scaleX, 0.05);
-    pose.left.scaleY = Math.max(pose.left.scaleY, 0.05);
-    pose.right.scaleX = Math.max(pose.right.scaleX, 0.05);
-    pose.right.scaleY = Math.max(pose.right.scaleY, 0.05);
+    /* 开合度 - 保证眼睛常睁不闭 */
+    pose.left.open = clamp(Math.max(1, pose.left.open || 1), 1, 1.3);
+    pose.right.open = clamp(Math.max(1, pose.right.open || 1), 1, 1.3);
+    pose.left.scaleX = Math.max(pose.left.scaleX || 1, 0.85);
+    pose.left.scaleY = Math.max(pose.left.scaleY || 1, 0.85);
+    pose.right.scaleX = Math.max(pose.right.scaleX || 1, 0.85);
+    pose.right.scaleY = Math.max(pose.right.scaleY || 1, 0.85);
 
     /* 过渡插值 */
     const tt = now - this._transStart;

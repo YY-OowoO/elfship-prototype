@@ -12,7 +12,9 @@ export default defineConfig({
       output: {
         manualChunks(id) {
           if (!id.includes("node_modules")) return undefined;
+          if (id.includes("three")) return "three";
           if (id.includes("recharts") || id.includes("d3-") || id.includes("victory-vendor")) return "charts";
+          if (id.includes("@phosphor-icons")) return "icons";
           if (id.includes("antd") || id.includes("@ant-design") || id.includes("rc-")) return "antd";
           if (id.includes("@dnd-kit")) return "dnd";
           if (id.includes("motion") || id.includes("gsap") || id.includes("lottie")) return "motion";

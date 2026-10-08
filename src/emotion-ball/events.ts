@@ -4,15 +4,21 @@ export type ElfEventType =
   | 'item_rejected'
   | 'item_started'
   | 'item_submitted'
+  | 'gate_completed'
+  | 'evidence_filled'
   | 'nudge_sent'
   | 'batch_date_shifted'
   | 'batch_selected'
   | 'role_switched'
+  | 'scenario_switched'
   | 'drag_start'
   | 'drag_end'
   | 'filter_changed'
   | 'diagnosis_requested'
   | 'search_active'
+  | 'milestone_cleared'
+  | 'report_generated'
+  | 'holiday_egg'
   | 'idle_relaxed';
 
 export interface ElfEvent {

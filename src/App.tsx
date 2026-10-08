@@ -1,32 +1,18 @@
-import { startTransition, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Alert,
   Badge,
   Button,
   Card,
-  DatePicker,
-  Descriptions,
-  Empty,
+  ConfigProvider,
   Flex,
-  Input,
-  Modal,
-  Popover,
   Segmented,
-  Select,
   Space,
   Tabs,
   Tag,
-  Timeline,
-  Tooltip,
   Typography,
   message,
+  theme,
 } from "antd";
-import {
-  SearchOutlined,
-  CompressOutlined,
-  ExpandOutlined,
-} from "@ant-design/icons";
-import dayjs from "dayjs";
 import { motion } from "motion/react";
 import { FlowBoard } from "./FlowBoard";
 import { ResourceTable } from "./ResourceTable";
@@ -35,33 +21,74 @@ import { BatchActionBar, GlobalSearchModal, HeroDeliveryRunway, avatar } from ".
 import { ElfCompanion, EmotionBall, dispatchElfEvent, type EmotionBallInstance } from "./emotion-ball";
 import { BoardScroll } from "./motion/BoardScroll";
 import { entrance } from "./motion/Entrance";
+import { playSound, isSoundMuted, toggleSoundMuted } from "./sound";
+import { useKeyboardShortcuts } from "./keyboard";
+import { AppSidebar } from "./components/layout/AppSidebar";
+import { AppHeader } from "./components/layout/AppHeader";
+import { CommandMenu } from "./components/layout/CommandMenu";
+import { THEMES } from "./tokens";
+
+// Dynamic code-split views & modals for instant initial paint
+const ResourceInventoryPage = lazy(() =>
+  import("./pages/ResourceInventoryPage").then((m) => ({ default: m.ResourceInventoryPage }))
+);
+const AnalyticsCockpitPage = lazy(() =>
+  import("./pages/AnalyticsCockpitPage").then((m) => ({ default: m.AnalyticsCockpitPage }))
+);
+const PlatformPortalPage = lazy(() =>
+  import("./pages/PlatformPortalPage").then((m) => ({ default: m.PlatformPortalPage }))
+);
+const ProcessTemplatesPage = lazy(() =>
+  import("./pages/ProcessTemplatesPage").then((m) => ({ default: m.ProcessTemplatesPage }))
+);
+const WorkItemModal = lazy(() =>
+  import("./components/WorkItemModal").then((m) => ({ default: m.WorkItemModal }))
+);
+const ElfCopilotDrawer = lazy(() =>
+  import("./components/ElfCopilotDrawer").then((m) => ({ default: m.ElfCopilotDrawer }))
+);
+const ShortcutModal = lazy(() =>
+  import("./components/ShortcutModal").then((m) => ({ default: m.ShortcutModal }))
+);
+const ConfettiEffect = lazy(() =>
+  import("./components/ConfettiEffect").then((m) => ({ default: m.ConfettiEffect }))
+);
+const ShadcnAdminRoot = lazy(() =>
+  import("./components/shadcn/ShadcnAdminRoot").then((m) => ({ default: m.ShadcnAdminRoot }))
+);
+const EnterpriseAdminRoot = lazy(() =>
+  import("./components/enterprise/EnterpriseAdminRoot").then((m) => ({ default: m.EnterpriseAdminRoot }))
+);
+import { ShiftSimulationModal } from "./components/ShiftSimulationModal";
 import {
   PEOPLE,
-  PREVIEW_ROLES,
   STAGES,
   TODAY,
   seedPrimaryBatch,
   seedQuietBatch,
+  SCENARIO_PRESETS,
+  buildScenarioBatch,
+  type ScenarioPresetKey,
 } from "./mock";
 import {
   actionQueue,
   batchLights,
   batchRisk,
   canConfirm,
-  canReject,
+  canRework,
   canStart,
-  canSubmit,
   confirmItem,
   currentItem,
   findItem,
   formatDay,
   generateNudgeMessage,
+  getAssetCategory,
   itemLight,
   launchRemain,
-  nextStageKey,
+  nextActiveStageForLane,
   patchEvidence,
-  previewShift,
   progress,
+  reassignItemDri,
   refreshLocks,
   remainLabel,
   rejectItem,
@@ -70,14 +97,23 @@ import {
   startItem,
   submitItem,
   stateLabel,
+  toggleGateItem,
+  toggleItemSkip,
   togglePin,
   tryMoveLaneToStage,
+  updateItemDueDate,
+  waiveItem,
 } from "./logic";
-import type { ChartSubFilter, DensityMode, LaunchBatch, PersonId, ResourceLane, StageKey, SwimlaneDimension, View, WorkItem } from "./types";
+import type { ChartSubFilter, DensityMode, LaunchBatch, PersonId, PreviewMode, ResourceLane, StageKey, SwimlaneDimension, View, WorkItem } from "./types";
 
 const { Text } = Typography;
 
 const SHARE_URL = "https://yy-oowoo.github.io/elfship-prototype/";
+const PREVIEW_MODE_LABELS: Record<PreviewMode, string> = {
+  companion: "方案一：灵动伴侣体验版",
+  classic: "方案二：经典工程管控台",
+  enterprise: "方案三：企业级专业可视化后台系统",
+};
 
 export function App() {
   const [batches, setBatches] = useState<LaunchBatch[]>(() => [
@@ -96,29 +132,83 @@ export function App() {
   const [selectedLaneIds, setSelectedLaneIds] = useState<string[]>([]);
   const [openId, setOpenId] = useState<string | null>(null);
   const [launchOpen, setLaunchOpen] = useState(false);
-  const [nextLaunch, setNextLaunch] = useState("");
   const [mineTab, setMineTab] = useState<"dri" | "confirm">("dri");
-  const [reason, setReason] = useState("");
-  const [err, setErr] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
-  const [searchOpen, setSearchOpen] = useState(false);
+  const [mineScope, setMineScope] = useState<"current" | "all">("current");
   const [quickFilter, setQuickFilter] = useState<"all" | "risk" | "mine">("all");
+  const [isMuted, setIsMuted] = useState<boolean>(() => isSoundMuted());
+  const [shortcutOpen, setShortcutOpen] = useState(false);
+  const [copilotOpen, setCopilotOpen] = useState(false);
+  const [confettiActive, setConfettiActive] = useState(false);
+  const [focusedCardId, setFocusedCardId] = useState<string | null>(null);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [commandMenuOpen, setCommandMenuOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const modalBallRef = useRef<EmotionBallInstance>(null);
+  const themeKey = "light" as const;
+  const currentTheme = THEMES.light;
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", "light");
+  }, []);
+
+  const [previewMode, setPreviewMode] = useState<PreviewMode>(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const p = params.get("preview") || params.get("style");
+      if (p === "enterprise" || p === "visual" || p === "cockpit") return "enterprise";
+      if (p === "classic") return "classic";
+      const saved = localStorage.getItem("elfship_preview_mode") as PreviewMode | null;
+      if (saved === "enterprise" || saved === "classic" || saved === "companion") return saved;
+    } catch {
+      // fallback safe
+    }
+    return "companion";
+  });
+
+  const handleTogglePreviewMode = (mode: PreviewMode) => {
+    if (mode === previewMode) return;
+    setPreviewMode(mode);
+    try {
+      localStorage.setItem("elfship_preview_mode", mode);
+      const url = new URL(window.location.href);
+      url.searchParams.set("preview", mode);
+      window.history.replaceState({}, "", url.toString());
+    } catch {
+      // fallback safe
+    }
+    message.success(`已切换至【${PREVIEW_MODE_LABELS[mode]}】`);
+  };
+
+  const [currentScenario, setCurrentScenario] = useState<ScenarioPresetKey>("baseline");
+
+  const handleSelectScenario = (key: ScenarioPresetKey) => {
+    playSound.click();
+    setCurrentScenario(key);
+    const scenarioBatch = refreshLocks(buildScenarioBatch(key));
+    setBatches((prev) => [
+      scenarioBatch,
+      ...prev.filter((b) => b.id !== scenarioBatch.id),
+    ]);
+    setActiveId(scenarioBatch.id);
+    const meta = SCENARIO_PRESETS.find((s) => s.key === key);
+    if (meta) {
+      message.success(meta.toast);
+      dispatchElfEvent("scenario_switched", {
+        message: `${meta.title}：${meta.desc}`,
+      });
+    }
+  };
+
+  const handleTogglePinInBatch = (itemId: string) => {
+    playSound.click();
+    update(togglePin(rawBatch, itemId, actor));
+  };
 
   useEffect(() => {
     document.documentElement.setAttribute("data-density", densityMode);
   }, [densityMode]);
 
-  useEffect(() => {
-    const onKey = (e: globalThis.KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
-        e.preventDefault();
-        setSearchOpen((cur) => !cur);
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
+
 
   const rawBatch = batches.find((b) => b.id === activeId) ?? batches[0];
 
@@ -156,8 +246,10 @@ export function App() {
     return { ...rawBatch, lanes: list };
   }, [rawBatch, quickFilter, actor, chartFilter]);
 
-  const risk = batchRisk(rawBatch);
-  const queue = actionQueue(rawBatch);
+  const risk = useMemo(() => batchRisk(rawBatch), [rawBatch]);
+  const queue = useMemo(() => actionQueue(rawBatch), [rawBatch]);
+  const batchRiskLights = useMemo(() => batchLights(rawBatch), [rawBatch]);
+  const totalRiskCount = useMemo(() => batchRiskLights.red + batchRiskLights.yellow, [batchRiskLights]);
   const open = openId ? findItem(rawBatch, openId) : null;
 
   function update(next: LaunchBatch) {
@@ -165,13 +257,134 @@ export function App() {
   }
 
   function openItem(id: string) {
+    // 任何展开页面组件互斥避让，避免多重弹层/抽屉重叠与冲突
+    setCopilotOpen(false);
+    setShortcutOpen(false);
+    setLaunchOpen(false);
+    setCommandMenuOpen(false);
+    setSearchOpen(false);
     setOpenId(id);
-    setReason("");
-    setErr(null);
+    setFocusedCardId(id);
   }
 
   function closeItem() {
     setOpenId(null);
+  }
+
+  function handleOpenCopilot() {
+    closeItem();
+    setLaunchOpen(false);
+    setShortcutOpen(false);
+    setCommandMenuOpen(false);
+    setSearchOpen(false);
+    setCopilotOpen(true);
+  }
+
+  function handleOpenLaunchModal() {
+    closeItem();
+    setCopilotOpen(false);
+    setShortcutOpen(false);
+    setCommandMenuOpen(false);
+    setSearchOpen(false);
+    setLaunchOpen(true);
+  }
+
+  function handleOpenShortcutModal() {
+    closeItem();
+    setCopilotOpen(false);
+    setLaunchOpen(false);
+    setCommandMenuOpen(false);
+    setSearchOpen(false);
+    setShortcutOpen(true);
+  }
+
+  const allVisibleItems = useMemo(() => {
+    return batch.lanes.map((l) => currentItem(l)).filter(Boolean) as WorkItem[];
+  }, [batch]);
+
+  useKeyboardShortcuts({
+    onSelectView: (v) => {
+      playSound.click();
+      closeItem();
+      setCopilotOpen(false);
+      setLaunchOpen(false);
+      setShortcutOpen(false);
+      setCommandMenuOpen(false);
+      setView(v);
+    },
+    onNextCard: () => {
+      if (allVisibleItems.length === 0) return;
+      const currentIdx = allVisibleItems.findIndex((it) => it.id === focusedCardId);
+      const nextIdx = currentIdx < 0 ? 0 : (currentIdx + 1) % allVisibleItems.length;
+      setFocusedCardId(allVisibleItems[nextIdx].id);
+      playSound.focus();
+    },
+    onPrevCard: () => {
+      if (allVisibleItems.length === 0) return;
+      const currentIdx = allVisibleItems.findIndex((it) => it.id === focusedCardId);
+      const prevIdx = currentIdx <= 0 ? allVisibleItems.length - 1 : currentIdx - 1;
+      setFocusedCardId(allVisibleItems[prevIdx].id);
+      playSound.focus();
+    },
+    onOpenFocused: () => {
+      if (focusedCardId) {
+        playSound.click();
+        openItem(focusedCardId);
+      }
+    },
+    onQuickPeek: () => {
+      if (focusedCardId) {
+        playSound.click();
+        openItem(focusedCardId);
+      }
+    },
+    onToggleElf: () => {
+      playSound.click();
+      if (copilotOpen) {
+        setCopilotOpen(false);
+      } else {
+        handleOpenCopilot();
+      }
+    },
+    onToggleMute: () => {
+      const next = toggleSoundMuted();
+      setIsMuted(next);
+      message.info(next ? "已静音操作音效" : "已开启操作音效");
+    },
+    onOpenHelp: () => {
+      playSound.click();
+      handleOpenShortcutModal();
+    },
+    onSearch: () => {
+      playSound.click();
+      closeItem();
+      setCopilotOpen(false);
+      setLaunchOpen(false);
+      setShortcutOpen(false);
+      setCommandMenuOpen(true);
+    },
+    onToggleScheme: () => {
+      playSound.fanfare();
+      const next = previewMode === "companion" ? "classic" : "companion";
+      handleTogglePreviewMode(next);
+    },
+  });
+
+  function handleToggleGate(gateId: string) {
+    if (!open) return;
+    const nextBatch = toggleGateItem(rawBatch, open.item.id, gateId);
+    update(nextBatch);
+    const updatedItem = findItem(nextBatch, open.item.id)?.item;
+    if (updatedItem) {
+      const allComplete = updatedItem.completeWhen.every((g) => g.ok);
+      const allEnter = updatedItem.enterNextWhen.every((g) => g.ok);
+      if (allComplete && allEnter) {
+        modalBallRef.current?.spin(1);
+        dispatchElfEvent("gate_completed", {
+          message: `【${open.lane.name}】门禁准出条件已全部达成，可直接确认放行！`,
+        });
+      }
+    }
   }
 
   const visibleLanes = useMemo(() => {
@@ -183,59 +396,72 @@ export function App() {
     });
   }, [batch, stageFilter]);
 
-  const myDriRows = useMemo(
-    () =>
-      rawBatch.lanes.flatMap((lane) =>
+  const allBatchesForMine = useMemo(() => (mineScope === "all" ? batches : [rawBatch]), [mineScope, batches, rawBatch]);
+
+  const myDriRows = useMemo(() => {
+    const list = allBatchesForMine.flatMap((b) =>
+      b.lanes.flatMap((lane) =>
         lane.items
           .filter((it) => !it.skipped && it.state !== "confirmed" && !it.locked && !it.waiting && it.driId === actor)
-          .map((it) => ({ lane, it })),
+          .map((it) => ({ lane, it, batch: b })),
       ),
-    [rawBatch, actor],
-  );
+    );
+    // Natural urgency-first sorting: rejected > red > yellow > WIP > dueAt
+    return list.sort((a, b) => {
+      const getRank = (it: WorkItem) => {
+        if (it.state === "rejected") return 0;
+        const light = itemLight(it);
+        if (light === "red") return 1;
+        if (light === "yellow") return 2;
+        if (it.state === "submitted") return 3;
+        if (it.state === "in_progress" || it.state === "rework") return 4;
+        return 5;
+      };
+      return getRank(a.it) - getRank(b.it) || a.it.dueAt.localeCompare(b.it.dueAt);
+    });
+  }, [allBatchesForMine, actor]);
 
-  const myConfirmRows = useMemo(
-    () =>
-      rawBatch.lanes.flatMap((lane) =>
+  const myConfirmRows = useMemo(() => {
+    const list = allBatchesForMine.flatMap((b) =>
+      b.lanes.flatMap((lane) =>
         lane.items
           .filter((it) => !it.skipped && it.state === "submitted" && !it.locked && it.confirmerId === actor)
-          .map((it) => ({ lane, it })),
+          .map((it) => ({ lane, it, batch: b })),
       ),
-    [rawBatch, actor],
+    );
+    // Natural urgency sorting: red overdue > yellow warning > dueAt
+    return list.sort((a, b) => {
+      const getRank = (it: WorkItem) => {
+        const light = itemLight(it);
+        if (light === "red") return 0;
+        if (light === "yellow") return 1;
+        return 2;
+      };
+      return getRank(a.it) - getRank(b.it) || a.it.dueAt.localeCompare(b.it.dueAt);
+    });
+  }, [allBatchesForMine, actor]);
+
+  const totalMyTasks = useMemo(
+    () => myDriRows.length + myConfirmRows.length,
+    [myDriRows.length, myConfirmRows.length]
   );
 
-  const totalMyTasks = myDriRows.length + myConfirmRows.length;
+  const doneLanes = useMemo(() => {
+    return rawBatch.lanes.filter((lane) => {
+      const p = progress(lane);
+      return p.total > 0 && p.done === p.total;
+    }).length;
+  }, [rawBatch.lanes]);
 
-  const doneLanes = rawBatch.lanes.filter((lane) => {
-    const p = progress(lane);
-    return p.total > 0 && p.done === p.total;
-  }).length;
-
-  async function copyShareLink() {
-    try {
-      await navigator.clipboard.writeText(SHARE_URL);
-    } catch {
-      window.prompt("复制分享链接", SHARE_URL);
-    }
-    setCopied(true);
-    message.success("分享链接已复制");
-    window.setTimeout(() => setCopied(false), 1800);
-  }
-
-  async function nativeShare() {
-    if (typeof navigator.share === "function") {
-      try {
-        await navigator.share({
-          title: "精灵交付 · 参考原型",
-          text: "上线管控看板原型",
-          url: SHARE_URL,
-        });
-        return;
-      } catch {
-        /* dismissed */
-      }
-    }
-    await copyShareLink();
-  }
+  const counts = useMemo(
+    () => ({
+      board: rawBatch.lanes.length,
+      resources: rawBatch.lanes.length,
+      riskCount: totalRiskCount,
+      mineCount: totalMyTasks,
+    }),
+    [rawBatch.lanes.length, totalRiskCount, totalMyTasks]
+  );
 
   function dropLane(laneId: string, dest: StageKey) {
     const result = tryMoveLaneToStage(rawBatch, laneId, dest, actor);
@@ -267,28 +493,41 @@ export function App() {
     if (selectedLaneIds.length === 0) return;
     let nextBatch = rawBatch;
     let successCount = 0;
+    const failureReasons: string[] = [];
+
     for (const laneId of selectedLaneIds) {
       const lane = nextBatch.lanes.find((l) => l.id === laneId);
-      const cur = lane ? currentItem(lane) : null;
-      const next = cur ? nextStageKey(cur.stage) : null;
-      if (next) {
-        const res = tryMoveLaneToStage(nextBatch, laneId, next, actor);
-        if (res.ok && res.batch !== nextBatch) {
-          nextBatch = res.batch;
-          successCount++;
-        }
+      if (!lane) continue;
+      const cur = currentItem(lane);
+      const next = nextActiveStageForLane(lane, cur.stage);
+      if (!next) {
+        failureReasons.push(`【${lane.name}】已至最后阶段`);
+        continue;
+      }
+      const res = tryMoveLaneToStage(nextBatch, laneId, next, actor);
+      if (res.ok && res.batch !== nextBatch) {
+        nextBatch = res.batch;
+        successCount++;
+      } else if (!res.ok) {
+        failureReasons.push(`【${lane.name}】${res.reason}`);
       }
     }
+
     if (successCount > 0) {
       update(nextBatch);
-      message.success(`成功批量流转 ${successCount} 项资源！`);
+      if (failureReasons.length === 0) {
+        message.success(`成功批量流转全部 ${successCount} 项资源进入下一交付阶段！`);
+      } else {
+        message.info(`已成功流转 ${successCount} 项资源，另有 ${failureReasons.length} 项未流转（如：${failureReasons[0]}）`);
+      }
       dispatchElfEvent("stage_advanced", {
         message: `已批量推进 ${successCount} 项资源进入下一交付阶段！`,
         action: "burst",
       });
       setSelectedLaneIds([]);
     } else {
-      message.warning("选中的资源中没有可直接流转的项（可能未满足交付门禁或当前未处于可确认状态）");
+      const topReason = failureReasons[0] ?? "未满足交付门禁或当前未处于可确认状态";
+      message.warning(`选中的 ${selectedLaneIds.length} 项资源未能流转：${topReason}`);
     }
   }
 
@@ -325,12 +564,15 @@ export function App() {
         ? rawBatch.lanes.filter((l) => selectedLaneIds.includes(l.id))
         : rawBatch.lanes;
     const csvContent = [
-      "资源名称,资源类型,当前阶段,责任人,截止日期,状态",
+      "资源名称,资产类型,分类,当前工序,主责人,确认人,截止日期,工期余量,工序状态,SVN版本",
       ...selectedLanes.map((l) => {
         const cur = currentItem(l);
         const dri = PEOPLE[cur.driId]?.name ?? cur.driId;
+        const confirmer = PEOPLE[cur.confirmerId]?.name ?? cur.confirmerId;
         const st = STAGES.find((s) => s.key === cur.stage)?.name ?? cur.stage;
-        return `"${l.name}","${l.type}","${st}","${dri}","${cur.dueAt}","${stateLabel(cur)}"`;
+        const cat = getAssetCategory(l.type);
+        const rev = cur.evidence?.svnRev ?? "-";
+        return `"${l.name}","${l.type}","${cat}","${st}","${dri}","${confirmer}","${cur.dueAt}","${remainLabel(cur.dueAt)}","${stateLabel(cur)}","${rev}"`;
       }),
     ].join("\n");
 
@@ -338,134 +580,468 @@ export function App() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `${rawBatch.name}_上线清单_${TODAY}.csv`;
+    link.download = `${rawBatch.name}_资产交付清单_${TODAY}.csv`;
     link.click();
     URL.revokeObjectURL(url);
-    message.success(`已导出 ${selectedLanes.length} 项资源的上线清单 CSV！`);
+    message.success(`已导出 ${selectedLanes.length} 项资源的资产交付清单 CSV！`);
+  }
+
+  function handleGenerateMarkdownReport() {
+    const selectedLanes =
+      selectedLaneIds.length > 0
+        ? rawBatch.lanes.filter((l) => selectedLaneIds.includes(l.id))
+        : rawBatch.lanes;
+    const lights = batchLights(rawBatch);
+    const lines = [
+      `### 【${rawBatch.name}】SOP 交付流转日报`,
+      `> 上线基准日：**${formatDay(rawBatch.launchDate)}**（${launchRemain(rawBatch.launchDate)}） · 统计资产：共 ${selectedLanes.length} 项`,
+      ``,
+      `#### 全局风险态势`,
+      `- **P0 严重逾期**：${lights.red} 项`,
+      `- **临期关注预警**：${lights.yellow} 项`,
+      `- **正常/已通关**：${selectedLanes.length - lights.red - lights.yellow} 项`,
+      ``,
+      `#### 重点资产交付工序跟踪`,
+      `| 资产名称 | 类别 | 当前工序 | 主责人 | 截止日期 | 工期状态 | SVN版本 |`,
+      `| :--- | :---: | :---: | :---: | :---: | :---: | :---: |`,
+      ...selectedLanes.map((l) => {
+        const cur = currentItem(l);
+        const dri = PEOPLE[cur.driId]?.name ?? cur.driId;
+        const st = STAGES.find((s) => s.key === cur.stage)?.name ?? cur.stage;
+        const light = itemLight(cur);
+        const statusIcon = light === "red" ? "[严重逾期]" : light === "yellow" ? "[临期预警]" : cur.state === "confirmed" ? "[已通关]" : "[正常推进]";
+        const rev = cur.evidence?.svnRev ? `r${cur.evidence.svnRev}` : "-";
+        return `| **${l.name}** | ${l.type} | ${st} | @${dri} | ${formatDay(cur.dueAt)} | ${statusIcon} | \`${rev}\` |`;
+      }),
+      ``,
+      `*由 ElfShip 精灵上线交付管控平台智能生成*`
+    ].join("\n");
+
+    try {
+      navigator.clipboard.writeText(lines);
+      message.success("已生成并复制【SOP 交付日报 Markdown 富文本】至剪贴板！可直接粘贴至企微/飞书。");
+      playSound.fanfare();
+      dispatchElfEvent("report_generated", { message: "已生成 SOP 交付进度汇报富文本。" });
+    } catch {
+      message.info("交付进度报告已生成");
+    }
+  }
+
+  if (previewMode === "enterprise") {
+    return (
+      <ConfigProvider
+        theme={{
+          algorithm: theme.defaultAlgorithm,
+          token: {
+            colorPrimary: "#2563eb",
+            colorBgBase: "#ffffff",
+            colorBgContainer: "#ffffff",
+            colorBgElevated: "#ffffff",
+            colorBorder: "#e2e8f0",
+            colorBorderSecondary: "#f1f5f9",
+            colorText: "#0f172a",
+            colorTextSecondary: "#475569",
+            borderRadius: 8,
+            fontFamily: "var(--font)",
+          },
+        }}
+      >
+        <Suspense fallback={<div className="view-loading-wrap"><div className="view-loading-spinner" /></div>}>
+          <EnterpriseAdminRoot
+            batches={batches}
+            activeBatch={rawBatch}
+            onSelectBatch={(id) => {
+              setActiveId(id);
+              setStageFilter(null);
+              setChartFilter(null);
+            }}
+            actor={actor}
+            onSelectActor={setActor}
+            previewMode={previewMode}
+            onTogglePreviewMode={handleTogglePreviewMode}
+            onOpenItem={openItem}
+            onOpenShiftModal={handleOpenLaunchModal}
+            onNudgeItem={(item, lane) => handleNudge(item, lane)}
+            onExportCsv={handleExportList}
+            onGenerateReport={handleGenerateMarkdownReport}
+            onReassignDri={(itemId, newDri) => {
+              update(reassignItemDri(rawBatch, itemId, newDri, actor));
+              playSound.click();
+              const driName = PEOPLE[newDri]?.name ?? newDri;
+              message.success(`已成功改派主责人至 @${driName}`);
+              dispatchElfEvent("item_started", { message: `已完成任务主责调度改派至 @${driName}` });
+            }}
+            onBatchReassignDri={(itemIds, newDri) => {
+              let nb = rawBatch;
+              itemIds.forEach((id) => {
+                nb = reassignItemDri(nb, id, newDri, actor);
+              });
+              update(nb);
+              playSound.confirm();
+              const driName = PEOPLE[newDri]?.name ?? newDri;
+              message.success(`已成功批量改派 ${itemIds.length} 项任务主责至 @${driName}`);
+              dispatchElfEvent("item_started", { message: `已批量调度 ${itemIds.length} 项任务至 @${driName}` });
+            }}
+            onQuickUnblockItem={(itemId, reason) => {
+              const item = findItem(rawBatch, itemId)?.item;
+              if (!item) return;
+              let nb = rawBatch;
+              if (item.state === "not_started") {
+                nb = startItem(nb, itemId, rawBatch.batchDriId);
+              }
+              nb = waiveItem(nb, itemId, rawBatch.batchDriId, reason || "安灯作战室快速解除阻断与下游级联加锁");
+              update(nb);
+              playSound.confirm();
+              message.success("已特批放行该阻塞节点，下游级联加锁已全面解除！");
+              dispatchElfEvent("gate_completed", { message: "安灯阻断已成功解除，流水线恢复运转。" });
+            }}
+            onOpenSearch={() => {
+              playSound.click();
+              setCommandMenuOpen(true);
+            }}
+          />
+        </Suspense>
+
+        <Suspense fallback={null}>
+          {open && (
+            <WorkItemModal
+              open={open}
+              actor={actor}
+              rawBatch={rawBatch}
+              onClose={closeItem}
+              onStartItem={(id) => {
+                update(startItem(rawBatch, id, actor));
+                playSound.click();
+                dispatchElfEvent("item_started", { message: "工序已启动推进。" });
+              }}
+              onSubmitItem={(id) => {
+                update(submitItem(rawBatch, id, actor));
+                playSound.click();
+                dispatchElfEvent("item_submitted", { message: "已提交交付物待审。" });
+              }}
+              onConfirmItem={(id) => {
+                const nextBatch = confirmItem(rawBatch, id, actor);
+                update(nextBatch);
+                playSound.confirm();
+                dispatchElfEvent("item_confirmed", { message: "工序已确认放行！", action: "burst" });
+                closeItem();
+              }}
+              onRejectItem={(id, reason) => {
+                update(rejectItem(rawBatch, id, actor, reason));
+                playSound.reject();
+                dispatchElfEvent("item_rejected", { message: "已退回主责返修。" });
+              }}
+              onStartRework={(id) => {
+                update(reworkItem(rawBatch, id, actor));
+                playSound.click();
+                dispatchElfEvent("item_started", { message: "已重新开始返工。" });
+              }}
+              onSkipItem={(id) => {
+                update(toggleItemSkip(rawBatch, id, actor));
+                playSound.click();
+              }}
+              onUpdateDueDate={(id, newDate) => {
+                update(updateItemDueDate(rawBatch, id, newDate, actor));
+                playSound.click();
+              }}
+              onPatchEvidence={(id, evidence) => {
+                update(patchEvidence(rawBatch, id, evidence));
+              }}
+              onToggleGate={handleToggleGate}
+              onOpenOtherItem={(otherId) => openItem(otherId)}
+              onSwitchActor={setActor}
+            />
+          )}
+        </Suspense>
+
+
+        <CommandMenu
+          open={commandMenuOpen}
+          onClose={() => setCommandMenuOpen(false)}
+          batch={rawBatch}
+          currentView={view}
+          onSelectView={(v) => {
+            playSound.click();
+            setView(v);
+          }}
+          onSelectActor={(pId) => {
+            setActor(pId);
+            dispatchElfEvent("role_switched", {
+              message: `已切换至 ${PEOPLE[pId].name}（${PEOPLE[pId].title}）视角。`,
+            });
+          }}
+          onSelectResourceLane={(_laneId, itemId) => {
+            if (itemId) openItem(itemId);
+          }}
+          onOpenShiftModal={handleOpenLaunchModal}
+          onOpenCopilot={handleOpenCopilot}
+          isMuted={isMuted}
+          onToggleMute={() => {
+            const next = toggleSoundMuted();
+            setIsMuted(next);
+            message.info(next ? "已静音操作音效" : "已开启操作音效");
+          }}
+        />
+
+        <ShiftSimulationModal
+          open={launchOpen}
+          onClose={() => setLaunchOpen(false)}
+          batch={rawBatch}
+          actor={actor}
+          onApplyShift={(newLaunch) => {
+            update(shiftLaunchDate(rawBatch, newLaunch, actor));
+            dispatchElfEvent("batch_date_shifted", {
+              message: `上线日期已调整为 ${formatDay(newLaunch)}，排期链已完成动态重排。`,
+            });
+          }}
+          onTogglePin={handleTogglePinInBatch}
+        />
+      </ConfigProvider>
+    );
+  }
+
+  if (previewMode === "classic") {
+    return (
+      <ConfigProvider
+        theme={{
+          token: {
+            colorPrimary: "#0f172a",
+            borderRadius: 8,
+            fontFamily: "var(--font)",
+          },
+        }}
+      >
+        <Suspense fallback={<div className="view-loading-wrap"><div className="view-loading-spinner" /></div>}>
+          <ShadcnAdminRoot
+            batches={batches}
+            activeBatch={rawBatch}
+            onSelectBatch={(id) => {
+              setActiveId(id);
+              setStageFilter(null);
+              setChartFilter(null);
+            }}
+            actor={actor}
+            onSelectActor={setActor}
+            previewMode={previewMode}
+            onTogglePreviewMode={handleTogglePreviewMode}
+            onOpenItem={openItem}
+            onOpenShiftModal={handleOpenLaunchModal}
+            onNudgeItem={(item, lane) => handleNudge(item, lane)}
+            onExportCsv={handleExportList}
+            onGenerateReport={handleGenerateMarkdownReport}
+            onOpenSearch={() => {
+              playSound.click();
+              setCommandMenuOpen(true);
+            }}
+          />
+        </Suspense>
+
+        <Suspense fallback={null}>
+          {open && (
+            <WorkItemModal
+              open={open}
+              actor={actor}
+              rawBatch={rawBatch}
+              onClose={closeItem}
+              onStartItem={(id) => {
+                update(startItem(rawBatch, id, actor));
+                playSound.click();
+                dispatchElfEvent("item_started", { message: "工序已启动推进。" });
+              }}
+              onSubmitItem={(id) => {
+                update(submitItem(rawBatch, id, actor));
+                playSound.click();
+                dispatchElfEvent("item_submitted", { message: "已提交交付物待审。" });
+              }}
+              onConfirmItem={(id) => {
+                const nextBatch = confirmItem(rawBatch, id, actor);
+                update(nextBatch);
+                playSound.confirm();
+                dispatchElfEvent("item_confirmed", { message: "工序已确认放行！", action: "burst" });
+                closeItem();
+              }}
+              onRejectItem={(id, reason) => {
+                update(rejectItem(rawBatch, id, actor, reason));
+                playSound.reject();
+                dispatchElfEvent("item_rejected", { message: "已退回主责返修。" });
+              }}
+              onStartRework={(id) => {
+                update(reworkItem(rawBatch, id, actor));
+                playSound.click();
+                dispatchElfEvent("item_started", { message: "已重新开始返工。" });
+              }}
+              onSkipItem={(id) => {
+                update(toggleItemSkip(rawBatch, id, actor));
+                playSound.click();
+              }}
+              onUpdateDueDate={(id, newDate) => {
+                update(updateItemDueDate(rawBatch, id, newDate, actor));
+                playSound.click();
+              }}
+              onPatchEvidence={(id, evidence) => {
+                update(patchEvidence(rawBatch, id, evidence));
+              }}
+              onToggleGate={handleToggleGate}
+              onOpenOtherItem={(otherId) => openItem(otherId)}
+              onSwitchActor={setActor}
+            />
+          )}
+        </Suspense>
+
+        <CommandMenu
+          open={commandMenuOpen}
+          onClose={() => setCommandMenuOpen(false)}
+          batch={rawBatch}
+          currentView={view}
+          onSelectView={(v) => {
+            playSound.click();
+            setView(v);
+          }}
+          onSelectActor={(pId) => {
+            setActor(pId);
+            dispatchElfEvent("role_switched", {
+              message: `已切换至 ${PEOPLE[pId].name}（${PEOPLE[pId].title}）视角。`,
+            });
+          }}
+          onSelectResourceLane={(_laneId, itemId) => {
+            if (itemId) openItem(itemId);
+          }}
+          onOpenShiftModal={handleOpenLaunchModal}
+          onOpenCopilot={handleOpenCopilot}
+          isMuted={isMuted}
+          onToggleMute={() => {
+            const next = toggleSoundMuted();
+            setIsMuted(next);
+            message.info(next ? "已静音操作音效" : "已开启操作音效");
+          }}
+        />
+
+        <ShiftSimulationModal
+          open={launchOpen}
+          onClose={() => setLaunchOpen(false)}
+          batch={rawBatch}
+          actor={actor}
+          onApplyShift={(newLaunch) => {
+            update(shiftLaunchDate(rawBatch, newLaunch, actor));
+            dispatchElfEvent("batch_date_shifted", {
+              message: `上线日期已调整为 ${formatDay(newLaunch)}，排期链已完成动态重排。`,
+            });
+          }}
+          onTogglePin={handleTogglePinInBatch}
+        />
+      </ConfigProvider>
+    );
   }
 
   return (
-    <div className="app">
-      <a className="skip" href="#main">
-        跳到内容
-      </a>
-      <header className="nav">
-        <div className="brand" style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <Tooltip title="交付精灵实时中控 · 点击触发全链路健康诊断">
-            <span
-              style={{ display: "inline-flex", cursor: "pointer" }}
-              onClick={() => dispatchElfEvent("diagnosis_requested")}
-            >
-              <EmotionBall
-                emotion={risk.level === "risk" ? "34" : risk.level === "watch" ? "11" : "02"}
-                size={28}
-                interactive={true}
-                lite={true}
-                label="Elf Header Avatar"
-              />
-            </span>
-          </Tooltip>
-          <div>
-            <b>精灵交付</b>
-            <span style={{ marginLeft: 6 }}>上线管控</span>
-          </div>
-        </div>
-        <Segmented
-          size="small"
-          className="nav-seg"
-          value={view}
-          onChange={(v) => setView(v as View)}
-          options={[
-            { label: "批次", value: "list" },
-            { label: "看板", value: "board" },
-            {
-              label: (
-                <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                  我的待办
-                  {totalMyTasks > 0 ? (
-                    <Badge count={totalMyTasks} size="small" style={{ backgroundColor: "#1677ff" }} />
-                  ) : null}
-                </span>
-              ),
-              value: "mine",
-            },
-          ]}
+    <ConfigProvider
+      theme={{
+        token: {
+          colorPrimary: currentTheme.primary,
+          borderRadius: 8,
+          fontFamily: "var(--font)",
+        },
+      }}
+    >
+      <div
+        className="app-layout-root"
+        data-theme={themeKey}
+        style={{
+          ["--primary" as string]: currentTheme.primary,
+          ["--primary-hover" as string]: currentTheme.primaryHover,
+          ["--primary-active" as string]: currentTheme.primaryActive,
+          ["--primary-light" as string]: currentTheme.primaryLight,
+          ["--primary-border" as string]: currentTheme.primaryBorder,
+          ["--accent-color" as string]: currentTheme.accent,
+          ["--sketch-ink" as string]: currentTheme.sketchInk,
+          ["--brand-gradient" as string]: currentTheme.gradient,
+        }}
+      >
+        <AppSidebar
+          currentView={view}
+          onSelectView={(v) => {
+            playSound.click();
+            setView(v);
+            window.scrollTo({ top: 0, behavior: "smooth" });
+          }}
+          collapsed={sidebarCollapsed}
+          onToggleCollapse={() => setSidebarCollapsed((c) => !c)}
+          actor={actor}
+          onSelectActor={(v) => {
+            setActor(v);
+            dispatchElfEvent("role_switched", {
+              message: `已切换至 ${PEOPLE[v].name}（${PEOPLE[v].title}）视角。`,
+            });
+          }}
+          counts={counts}
+          isMuted={isMuted}
+          onToggleMute={() => {
+            const next = toggleSoundMuted();
+            setIsMuted(next);
+            message.info(next ? "已静音操作音效" : "已开启操作音效");
+          }}
+          densityMode={densityMode}
+          onToggleDensity={() => {
+            playSound.click();
+            setDensityMode((d) => (d === "normal" ? "compact" : "normal"));
+          }}
+          onOpenCopilot={() => {
+            playSound.click();
+            setCopilotOpen(true);
+          }}
+          onOpenShortcuts={() => {
+            playSound.click();
+            setShortcutOpen(true);
+          }}
+          theme={currentTheme}
         />
-        <div className="nav-spacer" />
 
-        <Button
-          size="small"
-          className="spotlight-trigger-btn"
-          onClick={() => setSearchOpen(true)}
-          title="全局快速搜索 (快捷键 ⌘K 或 Ctrl+K)"
-        >
-          <SearchOutlined className="spotlight-icon-sm" style={{ color: "var(--muted)" }} />
-          <span className="spotlight-text">搜索资源 / 负责人</span>
-          <kbd className="spotlight-shortcut">⌘K</kbd>
-        </Button>
-
-        <Button
-          size="small"
-          type="text"
-          className="density-toggle-btn"
-          icon={densityMode === "compact" ? <CompressOutlined /> : <ExpandOutlined />}
-          onClick={() => setDensityMode((d) => (d === "normal" ? "compact" : "normal"))}
-          title="切换紧凑 HUD / 舒适排版"
-        >
-          {densityMode === "compact" ? "紧凑 HUD" : "舒适视图"}
-        </Button>
-
-        <label className="role">
-          预览身份
-          <Select
-            size="small"
-            value={actor}
-            onChange={(v) => {
-              setActor(v);
-              dispatchElfEvent("role_switched", {
-                message: `已切换至 ${PEOPLE[v].name}（${PEOPLE[v].title}）视角。`,
+        <div className="app-main-content-wrap">
+          <AppHeader
+            batches={batches}
+            activeBatch={rawBatch}
+            onSelectBatch={(id) => {
+              setActiveId(id);
+              setStageFilter(null);
+              setChartFilter(null);
+              dispatchElfEvent("batch_selected", {
+                message: `已载入【${batches.find((b) => b.id === id)?.name}】交付看板。`,
               });
             }}
-            options={PREVIEW_ROLES.map((r) => ({ value: r.id, label: r.label }))}
-            popupMatchSelectWidth={false}
+            currentView={view}
+            onOpenCommandMenu={() => {
+              closeItem();
+              setCopilotOpen(false);
+              setLaunchOpen(false);
+              setShortcutOpen(false);
+              setCommandMenuOpen(true);
+            }}
+            onOpenShiftModal={handleOpenLaunchModal}
+            quickFilter={quickFilter}
+            onChangeQuickFilter={(f) => setQuickFilter(f)}
+            riskCount={totalRiskCount}
+            myTasksCount={totalMyTasks}
+            shareUrl={SHARE_URL}
+            previewMode={previewMode}
+            onTogglePreviewMode={handleTogglePreviewMode}
+            currentScenario={currentScenario}
+            onSelectScenario={handleSelectScenario}
           />
-        </label>
-        <Popover
-          trigger="click"
-          placement="bottomRight"
-          arrow={false}
-          content={
-            <div className="share-pop">
-              <div className="share-pop-label">公开预览</div>
-              <Input value={SHARE_URL} readOnly size="small" />
-              <div className="share-pop-actions">
-                <Button type="primary" size="small" onClick={copyShareLink}>
-                  {copied ? "已复制" : "复制链接"}
-                </Button>
-                <Button type="default" size="small" href={SHARE_URL} target="_blank" rel="noreferrer">
-                  打开页面
-                </Button>
-                {typeof navigator !== "undefined" && typeof navigator.share === "function" ? (
-                  <Button type="default" size="small" onClick={nativeShare}>
-                    系统分享
-                  </Button>
-                ) : null}
-              </div>
-              <Text type="secondary" className="share-pop-hint">
-                假数据参考原型。发给同事用这条链接，不要发本机地址。
-              </Text>
-            </div>
-          }
-        >
-          <Button type="text" size="small" className="share-btn">
-            {copied ? "已复制" : "分享"}
-          </Button>
-        </Popover>
-        <Tag className="proto-tag">参考原型 · 假数据</Tag>
-      </header>
-      <div className="scroll-rail" aria-hidden="true">
-        <i className="scroll-rail-fill" />
-      </div>
+
+          <main className="app-view-container" id="main">
+            <Suspense fallback={<div className="view-loading-wrap"><div className="view-loading-spinner" /></div>}>
+              {view === "portal" && (
+                <PlatformPortalPage
+                  onNavigate={(v) => {
+                    playSound.click();
+                    setView(v);
+                  }}
+                />
+              )}
+
+              {view === "templates" && (
+                <ProcessTemplatesPage />
+              )}
 
       {view === "list" && (
         <div className="list-page view-in" id="main">
@@ -484,49 +1060,50 @@ export function App() {
               const isActive = b.id === activeId;
               return (
                 <motion.div key={b.id} className="batch-card-wrap" {...entrance(i * 0.07, 14)}>
-                <Card
-                  hoverable
-                  className={`batch-card${isActive ? " is-active-batch" : ""}`}
-                  onClick={() => {
-                    setActiveId(b.id);
-                    setStageFilter(null);
-                    setChartFilter(null);
-                    setView("board");
-                    dispatchElfEvent("batch_selected", {
-                      message: `已载入【${b.name}】交付看板。`,
-                    });
-                  }}
-                  extra={
-                    <Space size={6}>
-                      {isActive ? <Tag color="processing">当前查看</Tag> : null}
-                      <Tag color={r.level === "risk" ? "error" : r.level === "watch" ? "warning" : "success"}>
-                        {r.level === "risk" ? "有风险" : r.level === "watch" ? "需关注" : "正常"}
-                      </Tag>
-                    </Space>
-                  }
-                >
-                  <Flex align="center" gap={16}>
-                    <EmotionBall
-                      emotion={r.level === "risk" ? "34" : r.level === "watch" ? "11" : "10"}
-                      shape={b.id === "b-summer" ? "wedge" : "gem"}
-                      size={54}
-                      lite={true}
-                      interactive={true}
-                    />
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 4 }}>{b.name}</div>
-                      <div style={{ color: "var(--ink)", fontSize: "0.88rem" }}>{b.subtitle}</div>
-                      <div style={{ color: "var(--ink-soft)", fontSize: "0.85rem", marginTop: 4 }}>
-                        上线 {formatDay(b.launchDate)} · {launchRemain(b.launchDate)} · 进度 {bDone}/{b.lanes.length}
-                        {l.red > 0 ? ` · 红 ${l.red}` : ""}
-                        {l.yellow > 0 ? ` · 黄 ${l.yellow}` : ""}
+                  <Card
+                    hoverable
+                    className={`batch-card${isActive ? " is-active-batch" : ""}`}
+                    onClick={() => {
+                      setActiveId(b.id);
+                      setStageFilter(null);
+                      setChartFilter(null);
+                      setView("board");
+                      window.scrollTo({ top: 0, behavior: "smooth" });
+                      dispatchElfEvent("batch_selected", {
+                        message: `已载入【${b.name}】交付看板。`,
+                      });
+                    }}
+                    extra={
+                      <Space size={6}>
+                        {isActive ? <Tag color="processing">当前查看</Tag> : null}
+                        <Tag color={r.level === "risk" ? "error" : r.level === "watch" ? "warning" : "success"}>
+                          {r.level === "risk" ? "有风险" : r.level === "watch" ? "需关注" : "正常"}
+                        </Tag>
+                      </Space>
+                    }
+                  >
+                    <Flex align="center" gap={16}>
+                      <EmotionBall
+                        emotion={r.level === "risk" ? "34" : r.level === "watch" ? "11" : "10"}
+                        shape={b.id === "b-summer" ? "wedge" : "gem"}
+                        size={54}
+                        lite={true}
+                        interactive={true}
+                      />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 4 }}>{b.name}</div>
+                        <div style={{ color: "var(--ink)", fontSize: "0.88rem" }}>{b.subtitle}</div>
+                        <div style={{ color: "var(--ink-soft)", fontSize: "0.85rem", marginTop: 4 }}>
+                          上线 {formatDay(b.launchDate)} · {launchRemain(b.launchDate)} · 进度 {bDone}/{b.lanes.length}
+                          {l.red > 0 ? ` · 红 ${l.red}` : ""}
+                          {l.yellow > 0 ? ` · 黄 ${l.yellow}` : ""}
+                        </div>
+                        <div style={{ color: r.level === "risk" ? "var(--red)" : r.level === "watch" ? "var(--yellow)" : "var(--ok)", fontSize: "0.85rem", marginTop: 2 }}>
+                          {r.sentence}
+                        </div>
                       </div>
-                      <div style={{ color: r.level === "risk" ? "var(--red)" : r.level === "watch" ? "var(--yellow)" : "var(--ok)", fontSize: "0.85rem", marginTop: 2 }}>
-                        {r.sentence}
-                      </div>
-                    </div>
-                  </Flex>
-                </Card>
+                    </Flex>
+                  </Card>
                 </motion.div>
               );
             })}
@@ -544,31 +1121,17 @@ export function App() {
               doneLanes={doneLanes}
               totalLanes={batch.lanes.length}
               onHoverDate={setHoveredDate}
-              onChangeLaunchDate={() => {
-                setNextLaunch(batch.launchDate);
-                setLaunchOpen(true);
-              }}
-              onOpenItem={(id) => setOpenId(id)}
-              onNudge={(item, lane) => {
-                const text = generateNudgeMessage(item, lane, batch);
-                try {
-                  navigator.clipboard.writeText(text);
-                  message.success(`已复制 ${PEOPLE[item.driId]?.name} 的催办提醒到剪贴板！`);
-                } catch {
-                  message.info("催办提醒已生成");
-                }
-              }}
+              onChangeLaunchDate={handleOpenLaunchModal}
+              onOpenItem={openItem}
+              onNudge={(item, lane) => handleNudge(item, lane)}
+              onFilterQuick={(f) => setQuickFilter(f)}
             />
           </section>
 
           <div className="view-filter-bar">
             <Segmented
               value={quickFilter}
-              onChange={(v) => {
-                startTransition(() => {
-                  setQuickFilter(v as "all" | "risk" | "mine");
-                });
-              }}
+              onChange={(v) => setQuickFilter(v as "all" | "risk" | "mine")}
               options={[
                 { label: `全部看板 (${rawBatch.lanes.length})`, value: "all" },
                 {
@@ -622,57 +1185,37 @@ export function App() {
             ) : null}
           </div>
 
-          <BoardInsight
-            batch={batch}
-            queue={queue}
-            activeStage={stageFilter}
-            chartFilter={chartFilter}
-            onOpen={openItem}
-            onStage={(key) => setStageFilter((cur) => (cur === key ? null : key))}
-            onSubFilter={setChartFilter}
-          />
+          <section className="board-bar snap-pane">
+            <BoardInsight
+              batch={batch}
+              queue={queue}
+              activeStage={stageFilter}
+              chartFilter={chartFilter}
+              onOpen={openItem}
+              onStage={(key) => setStageFilter((cur) => (cur === key ? null : key))}
+              onSubFilter={setChartFilter}
+              onNudge={(item, lane) => handleNudge(item, lane)}
+            />
+          </section>
 
-          <Card
-            className="board-block board-flow snap-pane"
-            title="流程"
-            extra={<Text type="secondary">拖到下一节点确认 · 支持切换多维视图</Text>}
-          >
+          <section className="board-flow snap-pane">
             <FlowBoard
               batch={batch}
-              actor={actor}
               stageFilter={stageFilter}
-              onFilter={setStageFilter}
-              onOpen={openItem}
-              onDropLane={dropLane}
               swimlaneDim={swimlaneDim}
               onSwimlaneDimChange={setSwimlaneDim}
+              onFilter={setStageFilter}
+              onDropLane={dropLane}
+              onOpen={openItem}
+              actor={actor}
               hoveredDate={hoveredDate}
               hoveredLaneId={hoveredLaneId}
               setHoveredLaneId={setHoveredLaneId}
-              onNudge={handleNudge}
+              onNudge={(item, lane) => handleNudge(item, lane)}
             />
-          </Card>
+          </section>
 
-          <Card
-            className="board-block board-res snap-pane"
-            title={
-              <Space size="middle">
-                <span>入库资源</span>
-                {stageFilter ? (
-                  <Text type="secondary">
-                    {visibleLanes.length} / {batch.lanes.length} · {STAGES.find((s) => s.key === stageFilter)?.name}
-                  </Text>
-                ) : null}
-              </Space>
-            }
-            extra={
-              stageFilter ? (
-                <Button type="link" size="small" onClick={() => setStageFilter(null)}>
-                  看全部
-                </Button>
-              ) : null
-            }
-          >
+          <section className="board-res snap-pane">
             <ResourceTable
               lanes={visibleLanes}
               onOpen={openItem}
@@ -687,17 +1230,19 @@ export function App() {
               hoveredLaneId={hoveredLaneId}
               setHoveredLaneId={setHoveredLaneId}
             />
-          </Card>
+          </section>
         </BoardScroll>
       )}
 
+      {/* Batch Action Bar for Resource Table selections */}
       {view === "board" && selectedLaneIds.length > 0 ? (
         <BatchActionBar
           selectedCount={selectedLaneIds.length}
-          totalCount={visibleLanes.length}
+          totalCount={rawBatch.lanes.length}
           onBatchAdvance={handleBatchAdvance}
           onBatchNudge={handleBatchNudge}
           onExportList={handleExportList}
+          onGenerateReport={handleGenerateMarkdownReport}
           onClear={() => setSelectedLaneIds([])}
         />
       ) : null}
@@ -733,32 +1278,44 @@ export function App() {
             </div>
           </div>
 
-          <Tabs
-            activeKey={mineTab}
-            onChange={(k) => setMineTab(k as "dri" | "confirm")}
-            items={[
-              {
-                key: "dri",
-                label: (
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                    派给我的
-                    {myDriRows.length > 0 && <Badge count={myDriRows.length} size="small" />}
-                  </span>
-                ),
-              },
-              {
-                key: "confirm",
-                label: (
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                    等我确认
-                    {myConfirmRows.length > 0 && (
-                      <Badge count={myConfirmRows.length} size="small" style={{ backgroundColor: "#52c41a" }} />
-                    )}
-                  </span>
-                ),
-              },
-            ]}
-          />
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
+            <Tabs
+              activeKey={mineTab}
+              onChange={(k) => setMineTab(k as "dri" | "confirm")}
+              style={{ marginBottom: 0 }}
+              items={[
+                {
+                  key: "dri",
+                  label: (
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                      派给我的
+                      {myDriRows.length > 0 && <Badge count={myDriRows.length} size="small" />}
+                    </span>
+                  ),
+                },
+                {
+                  key: "confirm",
+                  label: (
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                      等我确认
+                      {myConfirmRows.length > 0 && (
+                        <Badge count={myConfirmRows.length} size="small" style={{ backgroundColor: "#52c41a" }} />
+                      )}
+                    </span>
+                  ),
+                },
+              ]}
+            />
+            <Segmented
+              size="small"
+              value={mineScope}
+              onChange={(v) => setMineScope(v as "current" | "all")}
+              options={[
+                { label: "当前批次", value: "current" },
+                { label: "全部批次", value: "all" },
+              ]}
+            />
+          </div>
           {(() => {
             const rows = mineTab === "dri" ? myDriRows : myConfirmRows;
             if (rows.length === 0) {
@@ -776,30 +1333,81 @@ export function App() {
             }
             return (
               <Flex orientation="vertical" gap={8}>
-                {rows.map(({ lane, it }, i) => {
+                {rows.map(({ lane, it, batch: targetBatch }, i) => {
                   const light = itemLight(it);
                   const stage = STAGES.find((s) => s.key === it.stage);
+                  const isRejected = it.state === "rejected";
                   return (
                     <motion.div key={it.id} {...entrance(i * 0.05, 8)}>
-                    <button className="mine-row" onClick={() => openItem(it.id)}>
-                      <Flex align="center" gap={8} style={{ minWidth: 0 }}>
-                        <Badge status={light === "red" ? "error" : light === "yellow" ? "warning" : "default"} />
-                        <Text strong ellipsis={{ tooltip: `${lane.name} · ${stage?.name}` }}>
-                          {lane.name}
+                      <button
+                        className={`mine-row${isRejected ? " is-rejected" : ""}`}
+                        onClick={() => {
+                          if (targetBatch.id !== activeId) setActiveId(targetBatch.id);
+                          openItem(it.id);
+                        }}
+                      >
+                        <Flex align="center" gap={8} style={{ minWidth: 0 }}>
+                          <Badge status={isRejected || light === "red" ? "error" : light === "yellow" ? "warning" : "default"} />
+                          <Tag color="default" style={{ fontSize: 11, margin: 0, padding: "0 5px", flexShrink: 0 }}>
+                            {targetBatch.name}
+                          </Tag>
+                          <Text strong ellipsis={{ tooltip: `${lane.name} · ${stage?.name}` }}>
+                            {lane.name}
+                          </Text>
+                        </Flex>
+                        <Tag color="blue">{stage?.short ?? it.stage}</Tag>
+                        <Tag color={isRejected ? "error" : undefined}>{stateLabel(it)}</Tag>
+                        <Text type={isRejected || light === "red" ? "danger" : light === "yellow" ? "warning" : "secondary"}>
+                          {remainLabel(it.dueAt)}
                         </Text>
-                      </Flex>
-                      <Tag color="blue">{stage?.short ?? it.stage}</Tag>
-                      <Tag>{stateLabel(it)}</Tag>
-                      <Text type={light === "red" ? "danger" : light === "yellow" ? "warning" : "secondary"}>
-                        {remainLabel(it.dueAt)}
-                      </Text>
-                      <Flex align="center" gap={6} style={{ minWidth: 0 }}>
-                        {avatar(mineTab === "dri" ? it.driId : it.confirmerId, 22)}
-                        <Text type="secondary" ellipsis>
-                          {PEOPLE[mineTab === "dri" ? it.driId : it.confirmerId].name}
-                        </Text>
-                      </Flex>
-                    </button>
+                        <Flex align="center" gap={6} style={{ minWidth: 0 }}>
+                          {avatar(mineTab === "dri" ? it.driId : it.confirmerId, 22)}
+                          <Text type="secondary" ellipsis>
+                            {PEOPLE[mineTab === "dri" ? it.driId : it.confirmerId].name}
+                          </Text>
+                        </Flex>
+                        <div>
+                          {mineTab === "confirm" && canConfirm(it, actor) === null ? (
+                            <Button
+                              size="small"
+                              type="primary"
+                              style={{ height: 24, fontSize: 12, padding: "0 8px" }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                update(confirmItem(targetBatch, it.id, actor));
+                                message.success(`已确认放行【${lane.name}】`);
+                              }}
+                            >
+                              快速通过
+                            </Button>
+                          ) : mineTab === "dri" && isRejected && canRework(it, actor) === null ? (
+                            <Button
+                              size="small"
+                              type="primary"
+                              style={{ height: 24, fontSize: 12, padding: "0 8px" }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                update(reworkItem(targetBatch, it.id, actor));
+                                message.success(`已开始返工【${lane.name}】`);
+                              }}
+                            >
+                              开始返工
+                            </Button>
+                          ) : mineTab === "dri" && it.state === "not_started" && canStart(it, actor) === null ? (
+                            <Button
+                              size="small"
+                              style={{ height: 24, fontSize: 12, padding: "0 8px" }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                update(startItem(targetBatch, it.id, actor));
+                                message.success(`已启动推进【${lane.name}】`);
+                              }}
+                            >
+                              开始
+                            </Button>
+                          ) : null}
+                        </div>
+                      </button>
                     </motion.div>
                   );
                 })}
@@ -809,354 +1417,143 @@ export function App() {
         </div>
       )}
 
-      <Modal
-        className="item-modal"
-        open={!!open}
-        onCancel={closeItem}
-        footer={null}
-        width={920}
-        centered
-        destroyOnHidden
-        title={
-          open ? (
-            <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-              <EmotionBall
-                ref={modalBallRef}
-                emotion={
-                  open.item.locked
-                    ? "06"
-                    : itemLight(open.item) === "red"
-                    ? "34"
-                    : open.item.state === "confirmed"
-                    ? "33"
-                    : open.item.state === "submitted"
-                    ? "11"
-                    : open.item.state === "in_progress" || open.item.state === "rework"
-                    ? "30"
-                    : "02"
-                }
-                shape={open.lane.type.includes("3D") ? "wedge" : open.lane.type.includes("特效") ? "gem" : "blob"}
-                size={46}
-                interactive={true}
-              />
-              <div>
-                <Text type="secondary">
-                  {open.lane.name} · {STAGES.find((s) => s.key === open.item.stage)?.name}
-                </Text>
-                <div>
-                  {stateLabel(open.item)}
-                  <Text type="secondary" style={{ marginLeft: 8, fontWeight: 400 }}>
-                    {open.item.offsetLabel} · {formatDay(open.item.dueAt)}
-                    {open.item.state === "confirmed" || open.item.skipped ? "" : ` · ${remainLabel(open.item.dueAt)}`}
-                  </Text>
-                  {open.item.duePinned ? <Tag color="blue" style={{ marginLeft: 8 }}>已钉死</Tag> : null}
-                </div>
-              </div>
-            </div>
-          ) : null
-        }
-      >
-        {open && (
-          <div className="item-modal-grid">
-            <div>
-              <Descriptions
-                className="block"
-                title="职责"
-                column={1}
-                size="small"
-                items={[
-                  {
-                    key: "dri",
-                    label: "主责",
-                    children: (
-                      <Flex align="center" gap={8}>
-                        {avatar(open.item.driId, 24)} {PEOPLE[open.item.driId].name}
-                      </Flex>
-                    ),
-                  },
-                  {
-                    key: "confirm",
-                    label: "确认",
-                    children: (
-                      <Flex align="center" gap={8}>
-                        {avatar(open.item.confirmerId, 24)} {PEOPLE[open.item.confirmerId].name}
-                      </Flex>
-                    ),
-                  },
-                  ...open.item.collabIds.map((id) => ({
-                    key: id,
-                    label: "协作",
-                    children: (
-                      <Flex align="center" gap={8}>
-                        {avatar(id, 24)} {PEOPLE[id].name}
-                      </Flex>
-                    ),
-                  })),
-                ]}
-              />
-              <Descriptions
-                className="block"
-                title="完成条件"
-                column={1}
-                size="small"
-                items={open.item.completeWhen.map((g) => ({
-                  key: g.id,
-                  label: g.label,
-                  children: <Tag color={g.ok ? "success" : "error"}>{g.ok ? "通过" : "缺失"}</Tag>,
-                }))}
-              />
-              <Descriptions
-                className="block"
-                title="流转条件"
-                column={1}
-                size="small"
-                items={open.item.enterNextWhen.map((g) => ({
-                  key: g.id,
-                  label: g.label,
-                  children: <Tag color={g.ok ? "success" : "error"}>{g.ok ? "通过" : "缺失"}</Tag>,
-                }))}
-              />
-              <section className="block">
-                <h3>过程记录</h3>
-                {open.item.history.length === 0 ? (
-                  <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="尚无记录" />
-                ) : (
-                  <Timeline
-                    items={[...open.item.history].reverse().map((h) => ({
-                      key: h.id,
-                      content: (
-                        <div>
-                          <Text type="secondary">{h.at}</Text>
-                          <div>
-                            {PEOPLE[h.actorId].name} {h.action}
-                            {h.from && h.to ? ` · ${h.from} → ${h.to}` : ""}
-                          </div>
-                          {h.reason && <Text type="secondary">{h.reason}</Text>}
-                        </div>
-                      ),
-                    }))}
-                  />
-                )}
-              </section>
-            </div>
-            <div>
-              <section className="block">
-                <h3>交付内容</h3>
-                {open.item.stage === "upload" && !open.item.skipped && (
-                  <>
-                    <label className="field">
-                      SVN 地址
-                      <Input
-                        value={open.item.evidence.svnPath ?? ""}
-                        onChange={(e) => update(patchEvidence(batch, open.item.id, { svnPath: e.target.value }))}
-                      />
-                    </label>
-                    <label className="field">
-                      资源版本
-                      <Input
-                        value={open.item.evidence.svnRev ?? ""}
-                        placeholder="未填则不能确认"
-                        onChange={(e) => update(patchEvidence(batch, open.item.id, { svnRev: e.target.value }))}
-                      />
-                    </label>
-                  </>
-                )}
-                <label className="field">
-                  说明
-                  <Input.TextArea
-                    rows={4}
-                    value={open.item.evidence.note ?? ""}
-                    onChange={(e) => update(patchEvidence(batch, open.item.id, { note: e.target.value }))}
-                  />
-                </label>
-              </section>
-              <section className="block item-actions">
-                <h3>处理</h3>
-                {err && <Alert type="error" showIcon message={err} style={{ marginBottom: 8 }} />}
-                <Flex gap={8} wrap>
-                  <Button
-                    type="default"
-                    onClick={() => {
-                      const msg = canStart(open.item, actor);
-                      if (msg) setErr(msg);
-                      else {
-                        update(startItem(batch, open.item.id, actor));
-                        modalBallRef.current?.setEmotion("30");
-                        dispatchElfEvent("item_started", {
-                          message: `【${open.lane.name}】已启动推进。`,
-                        });
-                        setErr(null);
-                      }
-                    }}
-                  >
-                    开始
-                  </Button>
-                  <Button
-                    type="default"
-                    onClick={() => {
-                      const msg = canSubmit(open.item, actor);
-                      if (msg) setErr(msg);
-                      else {
-                        update(submitItem(batch, open.item.id, actor));
-                        modalBallRef.current?.setEmotion("11");
-                        dispatchElfEvent("item_submitted", {
-                          message: `【${open.lane.name}】已提交交付内容，等待确认。`,
-                        });
-                        setErr(null);
-                      }
-                    }}
-                  >
-                    提交
-                  </Button>
-                  <Button
-                    type="primary"
-                    onClick={() => {
-                      const msg = canConfirm(open.item, actor);
-                      if (msg) setErr(msg);
-                      else {
-                        update(confirmItem(batch, open.item.id, actor));
-                        modalBallRef.current?.spin(1);
-                        modalBallRef.current?.burst(24);
-                        dispatchElfEvent("item_confirmed", {
-                          message: `【${open.lane.name}】节点已确认通过！`,
-                          action: "burst",
-                        });
-                        setErr(null);
-                      }
-                    }}
-                  >
-                    确认通过
-                  </Button>
-                  {open.item.state === "rejected" && (
-                    <Button
-                      type="default"
-                      onClick={() => {
-                        update(reworkItem(batch, open.item.id, actor));
-                        modalBallRef.current?.setEmotion("30");
-                        dispatchElfEvent("item_started", {
-                          message: `【${open.lane.name}】已重新开始返工。`,
-                        });
-                        setErr(null);
-                      }}
-                    >
-                      开始返工
-                    </Button>
-                  )}
-                  <Button
-                    type="default"
-                    disabled={open.item.state === "confirmed" || open.item.skipped}
-                    onClick={() => {
-                      update(togglePin(batch, open.item.id, actor));
-                      setErr(null);
-                    }}
-                  >
-                    {open.item.duePinned ? "取消钉死" : "钉死日期"}
-                  </Button>
-                </Flex>
-                <label className="field" style={{ marginTop: 12 }}>
-                  退回原因
-                  <Input.TextArea rows={2} value={reason} onChange={(e) => setReason(e.target.value)} />
-                </label>
-                <Button
-                  color="danger"
-                  variant="outlined"
-                  onClick={() => {
-                    const msg = canReject(open.item, actor, reason);
-                    if (msg) setErr(msg);
-                    else {
-                      update(rejectItem(batch, open.item.id, actor, reason));
-                      modalBallRef.current?.setEmotion("23");
-                      dispatchElfEvent("item_rejected", {
-                        message: `【${open.lane.name}】已退回重做。`,
-                      });
-                      setReason("");
-                      setErr(null);
-                    }
-                  }}
-                >
-                  退回
-                </Button>
-              </section>
-            </div>
-          </div>
-        )}
-      </Modal>
+      {view === "resources" && (
+        <div className="view-in" style={{ padding: "0 0 24px", height: "calc(100vh - 60px)", overflowY: "auto" }}>
+          <ResourceInventoryPage batch={rawBatch} onOpenItem={openItem} onNudge={(item, lane) => handleNudge(item, lane)} />
+        </div>
+      )}
 
-      <Modal
-        title="调整上线日"
-        open={launchOpen}
-        onCancel={() => setLaunchOpen(false)}
-        onOk={() => {
-          if (nextLaunch) {
-            update(shiftLaunchDate(batch, nextLaunch, actor));
-            dispatchElfEvent("batch_date_shifted", {
-              message: `上线日期已调整为 ${formatDay(nextLaunch)}，排期链已完成动态重排。`,
+      {view === "analytics" && (
+        <div className="view-in" style={{ padding: "0 0 24px", height: "calc(100vh - 60px)", overflowY: "auto" }}>
+          <AnalyticsCockpitPage batch={rawBatch} onOpenItem={openItem} onNudge={(item, lane) => handleNudge(item, lane)} />
+        </div>
+      )}
+            </Suspense>
+          </main>
+        </div>
+
+      <Suspense fallback={null}>
+        <WorkItemModal
+          open={open}
+          actor={actor}
+          rawBatch={rawBatch}
+          onClose={closeItem}
+          onStartItem={(id) => {
+            update(startItem(rawBatch, id, actor));
+            modalBallRef.current?.setEmotion("30");
+            playSound.click();
+            dispatchElfEvent("item_started", { message: "工序已启动推进。" });
+          }}
+          onSubmitItem={(id) => {
+            update(submitItem(rawBatch, id, actor));
+            modalBallRef.current?.setEmotion("11");
+            playSound.click();
+            dispatchElfEvent("item_submitted", { message: "已提交交付物待审。" });
+          }}
+          onConfirmItem={(id) => {
+            const nextBatch = confirmItem(rawBatch, id, actor);
+            update(nextBatch);
+            modalBallRef.current?.spin(1);
+            modalBallRef.current?.burst(24);
+            playSound.confirm();
+            dispatchElfEvent("item_confirmed", { message: "工序已确认放行！", action: "burst" });
+            const allDone = nextBatch.lanes.every((l) => {
+              const p = progress(l);
+              return p.total > 0 && p.done === p.total;
             });
-          }
-          setLaunchOpen(false);
-        }}
-        okText="确认调整"
-        cancelText="取消"
-        okButtonProps={{ type: "primary" }}
-        cancelButtonProps={{ type: "default" }}
-      >
-        <p className="hint">未完成且未钉死的任务会按工作日平移截止日期；已完成与已钉死保持原日期，并写入过程记录。</p>
-        <DatePicker
-          value={nextLaunch ? dayjs(nextLaunch) : null}
-          onChange={(d) => setNextLaunch(d ? d.format("YYYY-MM-DD") : "")}
-          style={{ width: "100%" }}
+            if (allDone) {
+              setConfettiActive(true);
+              playSound.fanfare();
+              dispatchElfEvent("milestone_cleared", {
+                message: `恭喜！【${nextBatch.name}】全部资产工序已达成通关！`,
+                action: "burst",
+              });
+            }
+            closeItem();
+          }}
+          onRejectItem={(id, reason, category) => {
+            update(rejectItem(rawBatch, id, actor, reason, category));
+            modalBallRef.current?.setEmotion("23");
+            playSound.reject();
+            dispatchElfEvent("item_rejected", { message: `已退回主责返修${category ? `（原因分类：${category}）` : ""}。` });
+          }}
+          onWaiveItem={(id, reason) => {
+            const nextBatch = waiveItem(rawBatch, id, actor, reason);
+            update(nextBatch);
+            modalBallRef.current?.burst(20);
+            playSound.confirm();
+            message.warning("已执行特批放行，下游已解锁，请关注风险待还项！");
+            dispatchElfEvent("item_confirmed", { message: "已执行特批放行，解锁下游！", action: "burst" });
+          }}
+          onStartRework={(id) => {
+            update(reworkItem(rawBatch, id, actor));
+            modalBallRef.current?.setEmotion("30");
+            playSound.click();
+            dispatchElfEvent("item_started", { message: "已重新开始返工。" });
+          }}
+          onSkipItem={(id) => {
+            update(toggleItemSkip(rawBatch, id, actor));
+            playSound.click();
+          }}
+          onUpdateDueDate={(id, newDate) => {
+            update(updateItemDueDate(rawBatch, id, newDate, actor));
+          }}
+          onToggleGate={(gateId) => handleToggleGate(gateId)}
+          onPatchEvidence={(id, patch) => update(patchEvidence(rawBatch, id, patch))}
+          onSwitchActor={(newActor) => {
+            setActor(newActor);
+            message.info(`已切换至【${PEOPLE[newActor].name}】身份视角`);
+          }}
+          onOpenOtherItem={(id) => openItem(id)}
         />
-        {(() => {
-          const preview = nextLaunch ? previewShift(batch, nextLaunch) : null;
-          if (!preview) return null;
-          if (preview.moved.length === 0) {
-            return (
-              <Alert
-                type="info"
-                showIcon
-                message={preview.kept > 0 ? "没有任务会变动（其余全部已完成或已钉死）" : "上线日未变化"}
-                style={{ marginTop: 12 }}
-              />
-            );
-          }
-          const shown = preview.moved.slice(0, 12);
-          const rest = preview.moved.length - shown.length;
-          return (
-            <>
-              <Alert
-                type="warning"
-                showIcon
-                message={`${preview.moved.length} 项将平移截止日期 · ${preview.kept} 项保持不变（完成/钉死）`}
-                style={{ marginTop: 12 }}
-              />
-              <div className="shift-preview">
-                {shown.map((row) => (
-                  <div key={row.item.id} className="shift-preview-row">
-                    <Text ellipsis={{ tooltip: `${row.laneName} · ${row.stageName}` }}>
-                      {row.laneName} · {row.stageName}
-                    </Text>
-                    <b>
-                      {formatDay(row.oldDue)} → {formatDay(row.newDue)}
-                    </b>
-                  </div>
-                ))}
-                {rest > 0 && (
-                  <Text type="secondary" className="shift-preview-more">
-                    其余 {rest} 项省略
-                  </Text>
-                )}
-              </div>
-            </>
-          );
-        })()}
-      </Modal>
+
+        <ElfCopilotDrawer
+          open={copilotOpen}
+          onClose={() => setCopilotOpen(false)}
+          batch={rawBatch}
+          onOpenItem={(id) => openItem(id)}
+          onNudge={(item, lane) => handleNudge(item, lane)}
+        />
+
+        <ShortcutModal
+          open={shortcutOpen}
+          onClose={() => setShortcutOpen(false)}
+        />
+
+        <ConfettiEffect
+          active={confettiActive}
+          onComplete={() => setConfettiActive(false)}
+        />
+      </Suspense>
+
+      <ShiftSimulationModal
+        open={launchOpen}
+        onClose={() => setLaunchOpen(false)}
+        batch={rawBatch}
+        actor={actor}
+        onApplyShift={(newLaunch) => {
+          update(shiftLaunchDate(rawBatch, newLaunch, actor));
+          dispatchElfEvent("batch_date_shifted", {
+            message: `上线日期已调整为 ${formatDay(newLaunch)}，排期链已完成动态重排。`,
+          });
+        }}
+        onTogglePin={handleTogglePinInBatch}
+      />
 
       <GlobalSearchModal
         open={searchOpen}
         onClose={() => setSearchOpen(false)}
         batch={rawBatch}
         onSelect={(itemId, stageKey) => {
-          if (stageKey) setStageFilter(stageKey);
+          setView("board");
+          if (stageKey) {
+            setStageFilter(stageKey);
+            window.setTimeout(() => {
+              document
+                .getElementById(`flow-col-${stageKey}`)
+                ?.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+            }, 120);
+          }
           openItem(itemId);
         }}
       />
@@ -1165,6 +1562,7 @@ export function App() {
         batch={rawBatch}
         riskLevel={risk.level}
         riskText={risk.sentence}
+        forceHide={Boolean(openId || copilotOpen || launchOpen || searchOpen || shortcutOpen || commandMenuOpen)}
         onTriggerNudge={() => {
           const blockedItem = rawBatch.lanes.flatMap((l) => l.items).find((x) => x.locked || itemLight(x) === "red");
           if (blockedItem) {
@@ -1176,6 +1574,35 @@ export function App() {
         }}
         onOpenSearch={() => setSearchOpen(true)}
       />
+
+      <CommandMenu
+        open={commandMenuOpen}
+        onClose={() => setCommandMenuOpen(false)}
+        batch={rawBatch}
+        currentView={view}
+        onSelectView={(v) => {
+          playSound.click();
+          setView(v);
+        }}
+        onSelectActor={(pId) => {
+          setActor(pId);
+          dispatchElfEvent("role_switched", {
+            message: `已切换至 ${PEOPLE[pId].name}（${PEOPLE[pId].title}）视角。`,
+          });
+        }}
+        onSelectResourceLane={(_laneId, itemId) => {
+          if (itemId) openItem(itemId);
+        }}
+        onOpenShiftModal={handleOpenLaunchModal}
+        onOpenCopilot={handleOpenCopilot}
+        isMuted={isMuted}
+        onToggleMute={() => {
+          const next = toggleSoundMuted();
+          setIsMuted(next);
+          message.info(next ? "已静音操作音效" : "已开启操作音效");
+        }}
+      />
     </div>
+  </ConfigProvider>
   );
 }

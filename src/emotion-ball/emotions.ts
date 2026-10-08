@@ -13,11 +13,11 @@ export const EMOTION_SEED: EmotionRawConfig[] = [
 
   {
     id: '00', name: '睡眠', group: 'life',
-    desc: '闭眼成细线，右上角 zzz 缓缓飘起，头微垂，只剩缓慢呼吸',
-    en: { name: 'Sleeping', desc: 'Eyes closed to thin lines, zzz drifting up at the top right, only a slow breath remains' },
+    desc: '目光平视微敛，右上角 zzz 缓缓飘起，头微垂，只剩缓慢呼吸',
+    en: { name: 'Sleeping', desc: 'Eyes steady and calm, zzz drifting up at the top right, only a slow breath remains' },
     transition: 900,
     gaze: false,
-    pool: [13, 22, 4], poolMs: [6000, 10000], blinkMs: null, openness: 0.08,
+    pool: [9, 0], poolMs: [6000, 10000], blinkMs: null, openness: 1,
     body: { y: 4, rotate: -2, breathe: 0.018, color: '#EEEBE4', zzz: 1 },
     eyes: { both: { y: 4, lookY: 2 } },
     anims: [
@@ -26,16 +26,16 @@ export const EMOTION_SEED: EmotionRawConfig[] = [
   },
   {
     id: '01', name: '唤醒', group: 'life',
-    desc: '从闭合眼环缓缓睁开，先揉眼似的眨两下，随后进入待机',
-    en: { name: 'Waking', desc: 'Eyes slowly crack open with a couple of groggy blinks, then settles into idle' },
+    desc: '从平静圆睁眼环苏醒，目光微调后进入待机',
+    en: { name: 'Waking', desc: 'Eyes awake with alert focus, settling into idle' },
     transition: 320,
-    pool: [13], poolMs: [800, 800], blinkMs: null,
+    pool: [9, 0], poolMs: [800, 800], blinkMs: null,
     sequence: {
       settle: { next: '02' },
       frames: [
-        { at: 0,    eyes: { both: { open: 0.1, y: 4 } } },
-        { at: 420,  eyes: { left: { open: 0.55, y: 2 }, right: { open: 0.12, y: 4 } } },
-        { at: 820,  eyes: { both: { open: 0.3, y: 3 } } },
+        { at: 0,    eyes: { both: { open: 1, y: 3 } } },
+        { at: 420,  eyes: { left: { open: 1, y: 1 }, right: { open: 1, y: 2 } } },
+        { at: 820,  eyes: { both: { open: 1, y: 1 } } },
         { at: 1400, eyes: { both: { open: 1, scaleX: 1.12, scaleY: 1.12, y: -2 } } },
         { at: 2100, eyes: { both: { open: 1, y: 0 } } }
       ]
@@ -82,32 +82,30 @@ export const EMOTION_SEED: EmotionRawConfig[] = [
   },
   {
     id: '05', name: '加载苏醒', group: 'life',
-    desc: '双眼缓慢交替亮起，像系统正在逐项初始化',
-    en: { name: 'Booting', desc: 'Eyes light up in slow alternation, like a system initializing step by step' },
+    desc: '双眼沉静注视，身体轻缓脉动，像系统正在逐项初始化',
+    en: { name: 'Booting', desc: 'Eyes light up in steady focus, like a system initializing step by step' },
     transition: 480,
-    pool: [0, 8], poolMs: [6000, 10000], blinkMs: null,
+    pool: [0, 9], poolMs: [6000, 10000], blinkMs: null,
     anims: [
-      { target: 'left',  prop: 'open', type: 'blink', interval: 1600, dur: 700 },
-      { target: 'right', prop: 'open', type: 'blink', interval: 1600, dur: 700, phaseMs: 800 },
-      { target: 'eyes',  prop: 'scale', type: 'pulse', amp: 0.04, period: 1600 }
+      { target: 'eyes',  prop: 'scale', type: 'pulse', amp: 0.06, period: 1600 }
     ]
   },
   {
     id: '06', name: '休眠', group: 'life',
-    desc: '困倦眼环 + 半开合，几乎静止，只剩极弱的呼吸起伏',
-    en: { name: 'Dormant', desc: 'Drowsy rings at half openness, nearly still, only the faintest breathing' },
+    desc: '清醒大眼静止平视，几乎静止，只剩极弱的呼吸起伏',
+    en: { name: 'Dormant', desc: 'Eyes awake and still, only the faintest breathing' },
     transition: 1200,
     gaze: false,
-    pool: [4, 22, 13], poolMs: [4000, 8000], blinkMs: null, openness: 0.4,
+    pool: [9, 0], poolMs: [4000, 8000], blinkMs: null, openness: 1,
     body: { y: 6, scale: 0.98, rotate: -1, breathe: 0.005, color: '#EBE8E1' },
-    eyes: { both: { y: 5 } }
+    eyes: { both: { y: 5, open: 1 } }
   },
   {
     id: '07', name: '抖动唤醒', group: 'life',
-    desc: '整球轻颤，闭合眼环交错睁开，随后进入待机',
-    en: { name: 'Shake Awake', desc: 'The whole body trembles as the eyes stagger open, then settles into idle' },
+    desc: '整球轻颤，大眼圆睁聚焦，随后进入待机',
+    en: { name: 'Shake Awake', desc: 'The whole body trembles as the eyes focus, then settles into idle' },
     transition: 220,
-    pool: [13], poolMs: [800, 800], blinkMs: null,
+    pool: [9, 0], poolMs: [800, 800], blinkMs: null,
     body: { breathe: 0.004 },
     anims: [
       { target: 'body', prop: 'x', type: 'jitter', amp: 4.5, speed: 10, decay: 1600 },
@@ -116,9 +114,9 @@ export const EMOTION_SEED: EmotionRawConfig[] = [
     sequence: {
       settle: { next: '02' },
       frames: [
-        { at: 0,    eyes: { both: { open: 0.1 } } },
-        { at: 380,  eyes: { left: { open: 0.4 }, right: { open: 0.12 } } },
-        { at: 900,  eyes: { both: { open: 0.7, y: 1 } } },
+        { at: 0,    eyes: { both: { open: 1, y: 1 } } },
+        { at: 380,  eyes: { left: { open: 1, y: 0 }, right: { open: 1, y: 0 } } },
+        { at: 900,  eyes: { both: { open: 1, y: 0 } } },
         { at: 1600, eyes: { both: { open: 1, scaleX: 1.08, scaleY: 1.08, y: -1 } } }
       ]
     }
@@ -315,16 +313,16 @@ export const EMOTION_SEED: EmotionRawConfig[] = [
   },
   {
     id: '31', name: '接收任务', group: 'agent',
-    desc: '轻轻眨一下并放大，像点头确认收到',
-    en: { name: 'Receiving', desc: 'A quick blink and slight enlargement, like a nod of acknowledgement' },
+    desc: '大眼明亮聚焦并轻抬，像点头确认收到',
+    en: { name: 'Receiving', desc: 'Eyes alert and bright, lifting with a nod of acknowledgement' },
     transition: 220,
-    pool: [19, 0, 8], poolMs: [4000, 8000], blinkMs: null,
+    pool: [19, 0, 9], poolMs: [4000, 8000], blinkMs: null,
     body: { breathe: 0.008 },
     sequence: {
       settle: 'base',
       frames: [
         { at: 0 },
-        { at: 100, eyes: { both: { open: 0.1 } } },
+        { at: 100, eyes: { both: { open: 1, y: 1 } } },
         { at: 280, eyes: { both: { open: 1, scaleX: 1.12, scaleY: 1.12, y: -2 } }, body: { y: -3 } },
         { at: 700, eyes: { both: { open: 1 } } }
       ]
@@ -398,13 +396,12 @@ export const EMOTION_SEED: EmotionRawConfig[] = [
   },
   {
     id: '36', name: '联网加载', group: 'agent',
-    desc: '左右眼轮流眨，像信号在两端来回跳',
-    en: { name: 'Loading', desc: 'Eyes blink in alternation, like a signal hopping between two endpoints' },
+    desc: '左右眼沉静扫视，脉动轻快，像信号在两端稳定交互',
+    en: { name: 'Loading', desc: 'Eyes alert and steady, pulsing rhythmically like signal exchange' },
     transition: 380,
-    pool: [0, 8], poolMs: [6000, 10000], blinkMs: null,
+    pool: [0, 9], poolMs: [6000, 10000], blinkMs: null,
     anims: [
-      { target: 'left',  prop: 'open', type: 'blink', interval: 1200, dur: 380 },
-      { target: 'right', prop: 'open', type: 'blink', interval: 1200, dur: 380, phaseMs: 600 },
+      { target: 'eyes',  prop: 'scale', type: 'pulse', amp: 0.08, period: 1200 },
       { target: 'eyes',  prop: 'lookX', type: 'sine', amp: 2, period: 2400 }
     ]
   },
@@ -422,10 +419,10 @@ export const EMOTION_SEED: EmotionRawConfig[] = [
   },
   {
     id: '38', name: '拒绝/受限', group: 'agent',
-    desc: '斜眼下压，进入时连续摇头，明确表示不行',
-    en: { name: 'Refusing', desc: 'A lowered sidelong gaze with a firm head-shake on entry: the answer is no' },
+    desc: '目光坚定注视，进入时连续摇头，明确表示不行',
+    en: { name: 'Refusing', desc: 'A steady clear gaze with a firm head-shake on entry: the answer is no' },
     transition: 380,
-    pool: [14, 5, 23], poolMs: [2600, 4500], blinkMs: [4500, 8000], openness: 0.6,
+    pool: [14, 5, 9], poolMs: [2600, 4500], blinkMs: null, openness: 1,
     body: { y: 2, rotate: -2, color: '#EFE8E4' },
     eyes: { both: { lookY: 3, y: 2 } },
     sequence: {
@@ -458,7 +455,7 @@ export const EMOTION_SEED: EmotionRawConfig[] = [
     desc: '6 组扫读眼环高速轮换（弹簧加速），目光左右快扫',
     en: { name: 'Searching', desc: 'Six reading rings rotate at high speed while the gaze sweeps rapidly side to side' },
     transition: 320,
-    pool: [15, 9, 3, 20, 12, 18], poolMs: [1000, 1800], poolSpeed: 10, blinkMs: [1600, 4000],
+    pool: [15, 9, 3, 20, 12, 18], poolMs: [1000, 1800], poolSpeed: 10, blinkMs: null,
     body: { breathe: 0.006 },
     anims: [
       { target: 'eyes', prop: 'lookX', type: 'scan', amp: 11, period: 700 }
@@ -466,17 +463,17 @@ export const EMOTION_SEED: EmotionRawConfig[] = [
   },
   {
     id: '41', name: '停止终止', group: 'agent',
-    desc: '闭合眼环，慢慢收小半闭后定格',
-    en: { name: 'Powering Off', desc: 'Closing rings shrink to half-closed and quietly freeze' },
+    desc: '清醒大眼静立定格，进入安全停止态',
+    en: { name: 'Powering Off', desc: 'Eyes awake and steady, quietly holding in safe stopped state' },
     transition: 280,
     gaze: false,
-    pool: [13, 22], poolMs: [6000, 9000], blinkMs: null,
+    pool: [9, 0], poolMs: [6000, 9000], blinkMs: null,
     body: { y: 3, breathe: 0.004, color: '#EBE8E2' },
     sequence: {
       settle: 'hold',
       frames: [
         { at: 0 },
-        { at: 1500, eyes: { both: { scaleX: 0.6, scaleY: 0.6, open: 0.35, y: 3 } }, body: { y: 4, scale: 0.97 } }
+        { at: 1500, eyes: { both: { scaleX: 0.92, scaleY: 0.92, open: 1, y: 1 } }, body: { y: 2, scale: 0.98 } }
       ]
     }
   }

@@ -153,6 +153,7 @@ export interface EmotionBallOptions {
   lite?: boolean;
   autostart?: boolean;
   interactive?: boolean;
+  noBlink?: boolean;
   idle?: boolean | {
     standbyAfter?: number;
     sleepAfter?: number;

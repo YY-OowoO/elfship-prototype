@@ -3,9 +3,10 @@ import type { TableColumnsType } from "antd";
 import { InboxOutlined } from "@ant-design/icons";
 import { useEffect, useMemo, useState } from "react";
 import { PEOPLE, STAGES, TODAY } from "./mock";
-import { currentItem, formatDay, itemLight, laneLight, progress, stateLabel, workdaysBetween } from "./logic";
+import { currentItem, formatDay, getAssetCategory, itemLight, laneLight, progress, stateLabel, workdaysBetween } from "./logic";
 import type { Light, ResourceLane, StageKey, WorkItem } from "./types";
 import { Ellipsis, EvidenceQuickPeek, avatar } from "./ui";
+import { AssetTypeBadge, ItemStatusIcon, StageIcon } from "./icons";
 
 const { Text } = Typography;
 
@@ -39,18 +40,6 @@ type ResRow =
   | { kind: "lane"; id: string; lane: ResourceLane }
   | { kind: "more"; id: string; stage: StageKey; rest: number };
 
-function typeFamily(type: string) {
-  if (type.startsWith("2D")) return "平面";
-  if (type.startsWith("3D")) return "3D";
-  return type;
-}
-
-function typeLabel(type: string) {
-  if (type === "2D") return "平面";
-  if (type === "2D 原画") return "原画";
-  return type;
-}
-
 function occupyByStage(lanes: ResourceLane[]): OccupyRow[] {
   return STAGES.map((st) => {
     const here = lanes.filter((lane) => currentItem(lane).stage === st.key);
@@ -69,7 +58,7 @@ function occupyByStage(lanes: ResourceLane[]): OccupyRow[] {
 function occupyByType(lanes: ResourceLane[]): Array<{ type: string; count: number }> {
   const map = new Map<string, number>();
   for (const lane of lanes) {
-    const key = typeFamily(lane.type);
+    const key = getAssetCategory(lane.type);
     map.set(key, (map.get(key) ?? 0) + 1);
   }
   return [...map.entries()]
@@ -216,7 +205,7 @@ export function ResourceTable({
 
   const types = useMemo(() => occupyByType(lanes), [lanes]);
   const typed = useMemo(
-    () => (typeFilter ? lanes.filter((lane) => typeFamily(lane.type) === typeFilter) : lanes),
+    () => (typeFilter ? lanes.filter((lane) => getAssetCategory(lane.type) === typeFilter) : lanes),
     [lanes, typeFilter],
   );
   const occupy = useMemo(() => occupyByStage(typed), [typed]);
@@ -305,11 +294,9 @@ export function ResourceTable({
           return (
             <button type="button" className="res-name-hit" onClick={() => onOpen(currentItem(lane).id)}>
               <Badge status={badge} />
-              <span className="res-name-copy">
+              <span className="res-name-copy" style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                 <Ellipsis>{lane.name}</Ellipsis>
-                <Text type="secondary" className="res-name-type">
-                  {typeLabel(lane.type)}
-                </Text>
+                <AssetTypeBadge type={lane.type} size={12} />
               </span>
             </button>
           );
@@ -325,18 +312,29 @@ export function ResourceTable({
       {
         key: "state",
         title: "状态",
-        width: showStage ? 168 : 132,
+        width: showStage ? 172 : 136,
         onCell: (row) => (row.kind === "group" || row.kind === "more" ? { colSpan: 0 } : {}),
         render: (_, row) => {
           if (row.kind !== "lane") return null;
           const cur = currentItem(row.lane);
           const stage = STAGES.find((s) => s.key === cur.stage);
           const light = itemLight(cur);
+          const stateText = laneStateText(row.lane, cur);
           return (
             <div className="res-state">
-              {showStage ? <Text className="res-state-stage">{stage?.short ?? cur.stage}</Text> : null}
-              <Tag variant="filled" color={stateTagColor(row.lane, cur)}>
-                {laneStateText(row.lane, cur)}
+              {showStage ? (
+                <Text className="res-state-stage" style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
+                  <StageIcon stage={cur.stage} size={12} />
+                  {stage?.short ?? cur.stage}
+                </Text>
+              ) : null}
+              <Tag
+                variant="filled"
+                color={stateTagColor(row.lane, cur)}
+                style={{ display: "inline-flex", alignItems: "center", gap: 3 }}
+              >
+                <ItemStatusIcon item={cur} extra={stateText} size={12} />
+                {stateText}
               </Tag>
               <Text
                 type={light === "red" ? "danger" : light === "yellow" ? "warning" : "secondary"}
@@ -381,11 +379,21 @@ export function ResourceTable({
   })();
 
   function toggleGroup(stage: StageKey) {
-    setOpen((cur) => (cur.includes(stage) ? cur.filter((key) => key !== stage) : [...cur, stage]));
+    setOpen((cur) => {
+      const willOpen = !cur.includes(stage);
+      const next = willOpen ? [...cur, stage] : cur.filter((key) => key !== stage);
+      if (willOpen) {
+        window.setTimeout(() => {
+          const el = document.getElementById(`res-stage-group-${stage}`);
+          el?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        }, 50);
+      }
+      return next;
+    });
   }
 
   return (
-    <div className="res-board">
+    <div className="res-board" id="res-board-section">
       <OccupyChart
         rows={occupy}
         types={types}
@@ -395,8 +403,18 @@ export function ResourceTable({
         label={filterLabel}
         filtered={filtered}
         foldLabel={canFold ? (allOpen ? "收起平稳" : "展开全部") : null}
-        onStage={(key) => setHereOnly((cur) => (cur === key ? null : key))}
-        onType={(type) => setTypeFilter((cur) => (cur === type ? null : type))}
+        onStage={(key) => {
+          setHereOnly((cur) => (cur === key ? null : key));
+          window.setTimeout(() => {
+            document.querySelector(".res-table")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+          }, 60);
+        }}
+        onType={(type) => {
+          setTypeFilter((cur) => (cur === type ? null : type));
+          window.setTimeout(() => {
+            document.querySelector(".res-table")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+          }, 60);
+        }}
         onMode={setMode}
         onClear={() => {
           setHereOnly(null);
@@ -411,6 +429,9 @@ export function ResourceTable({
                 } else {
                   setOpen(presentStages);
                   setFull(presentStages);
+                  window.setTimeout(() => {
+                    document.querySelector(".res-table")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+                  }, 60);
                 }
               }
             : undefined
@@ -427,16 +448,47 @@ export function ResourceTable({
         onRow={(row) => {
           if (row.kind === "group") {
             return {
+              id: `res-stage-group-${row.stage}`,
+              tabIndex: 0,
+              role: "button",
+              onKeyDown: (event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  toggleGroup(row.stage);
+                }
+              },
               onClick: () => toggleGroup(row.stage),
               title: row.open ? `收起 ${row.title}` : `展开 ${row.title}`,
             };
           }
           if (row.kind === "more") {
             return {
-              onClick: () => setFull((cur) => (cur.includes(row.stage) ? cur : [...cur, row.stage])),
+              tabIndex: 0,
+              role: "button",
+              onKeyDown: (event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  setFull((cur) => (cur.includes(row.stage) ? cur : [...cur, row.stage]));
+                }
+              },
+              onClick: (event) => {
+                setFull((cur) => (cur.includes(row.stage) ? cur : [...cur, row.stage]));
+                const el = (event.currentTarget as HTMLElement);
+                window.setTimeout(() => {
+                  el?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+                }, 50);
+              },
             };
           }
           return {
+            tabIndex: 0,
+            role: "button",
+            onKeyDown: (event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                onOpen(currentItem(row.lane).id);
+              }
+            },
             onClick: (event) => {
               if ((event.target as HTMLElement).closest("button") || (event.target as HTMLElement).closest(".ant-checkbox-wrapper")) return;
               onOpen(currentItem(row.lane).id);
@@ -447,15 +499,15 @@ export function ResourceTable({
         }}
         rowClassName={(row, index) => {
           const baseIndex = index >= 36 ? " res-row-no-anim" : "";
-          if (row.kind === "group") return `res-row-group tone-${row.tone}${row.open ? "" : " is-shut"}`;
-          if (row.kind === "more") return "res-row-more";
+          if (row.kind === "group") return `res-row-group tone-${row.tone}${row.open ? "" : " is-shut"} is-commandable`;
+          if (row.kind === "more") return "res-row-more is-commandable";
           const cur = currentItem(row.lane);
           const light = laneLight(row.lane);
           const tone = light === "red" ? "res-row-risk" : light === "yellow" ? "res-row-watch" : "";
           const isFocused = hoveredLaneId === row.lane.id ? " is-row-focused" : "";
           const isDateFocus = hoveredDate ? (cur.dueAt === hoveredDate ? " is-date-focus" : " is-date-dimmed") : "";
           const isSelected = selectedLaneIds.includes(row.lane.id) ? " is-row-selected" : "";
-          return `${tone}${baseIndex}${isFocused}${isDateFocus}${isSelected}`;
+          return `${tone}${baseIndex}${isFocused}${isDateFocus}${isSelected} is-commandable`;
         }}
         locale={{
           emptyText: (

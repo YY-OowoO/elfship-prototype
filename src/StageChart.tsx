@@ -11,6 +11,7 @@ import {
   type TooltipValueType,
 } from "recharts";
 import { Badge, Empty, Flex, Segmented, Tag, Typography } from "antd";
+import { BellOutlined } from "@ant-design/icons";
 import { PEOPLE, STAGES, TODAY } from "./mock";
 import { avatar } from "./ui";
 import {
@@ -24,7 +25,7 @@ import {
   type QueueRow,
   workdaysBetween,
 } from "./logic";
-import type { ChartRiskType, ChartSubFilter, LaunchBatch, StageKey, WorkItem } from "./types";
+import type { ChartRiskType, ChartSubFilter, LaunchBatch, ResourceLane, StageKey, WorkItem } from "./types";
 import { palette } from "./tokens";
 import { prefersReduce } from "./motion/prefers";
 
@@ -102,6 +103,7 @@ export function BoardInsight({
   onOpen,
   onStage,
   onSubFilter,
+  onNudge,
 }: {
   batch: LaunchBatch;
   queue: QueueRow[];
@@ -110,10 +112,11 @@ export function BoardInsight({
   onOpen: (id: string) => void;
   onStage?: (key: StageKey) => void;
   onSubFilter?: (filter: ChartSubFilter | null) => void;
+  onNudge?: (item: WorkItem, lane: ResourceLane) => void;
 }) {
   return (
     <div className="insight snap-pane">
-      <QueueBoard queue={queue} onOpen={onOpen} />
+      <QueueBoard batch={batch} queue={queue} onOpen={onOpen} onNudge={onNudge} />
       <StageProcessChart
         batch={batch}
         activeStage={activeStage}
@@ -126,11 +129,15 @@ export function BoardInsight({
 }
 
 function QueueBoard({
+  batch,
   queue,
   onOpen,
+  onNudge,
 }: {
+  batch: LaunchBatch;
   queue: QueueRow[];
   onOpen: (id: string) => void;
+  onNudge?: (item: WorkItem, lane: ResourceLane) => void;
 }) {
   const [kindFilter, setKindFilter] = useState<ActionKind | "all">("all");
   const counts = queueKindCounts(queue);
@@ -145,7 +152,7 @@ function QueueBoard({
     <div className="insight-card insight-queue" id="queue-board">
       <div className="queue-board-head">
         <div className="insight-label">
-          <span>先处理</span>
+          <span>先处理 · 风险与建议</span>
           <span className="queue-badge-count">{queue.length}</span>
         </div>
         {queue.length > 0 && (
@@ -161,37 +168,76 @@ function QueueBoard({
         {rows.length === 0 ? (
           <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={queue.length === 0 ? "暂无要先处理的事项" : "这一类没有事项"} />
         ) : (
-          <Flex orientation="vertical" gap={6}>
+          <Flex orientation="vertical" gap={8}>
             {rows.map((row, i) => {
               const meta = isActionKind(row.kind) ? QUEUE_KIND_META[row.kind] : null;
               const light = itemLight(row.item);
               const stage = STAGES.find((s) => s.key === row.item.stage);
               const dri = PEOPLE[row.item.driId];
+              const lane = batch.lanes.find((l) => l.id === row.item.laneId);
+              const showNudge = onNudge && lane && (row.kind === "block" || row.kind === "overdue" || row.actionLabel === "催办");
               return (
                 <button
                   key={row.id}
                   type="button"
-                  className="queue-hit"
+                  className={`queue-hit ${row.kind ? `kind-${row.kind}` : ""}`}
                   style={{ ["--i" as string]: i }}
-                  onClick={() => onOpen(row.item.id)}
+                  onClick={() => {
+                    onOpen(row.item.id);
+                    window.setTimeout(() => {
+                      const stageCol = document.getElementById(`flow-col-${row.item.stage}`);
+                      stageCol?.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+                    }, 50);
+                  }}
+                  title={`点击查看【${row.laneName} · ${stage?.name ?? row.item.stage}】详情与处理`}
                 >
-                  <Badge status={light === "red" ? "error" : light === "yellow" ? "warning" : "default"} />
-                  <Text ellipsis={{ tooltip: row.laneName }} className="queue-hit-name">
-                    {row.laneName}
-                  </Text>
-                  <span className="queue-hit-facts">
-                    <Text type="secondary" className="queue-hit-stage">
-                      {stage?.short ?? row.item.stage}
-                    </Text>
-                    {meta && <Tag color={meta.color}>{meta.label}</Tag>}
-                    <Text type={light === "red" ? "danger" : "warning"} className="queue-hit-due">
-                      {remainLabel(row.item.dueAt)}
-                    </Text>
-                    <span className="queue-hit-dri">
-                      {avatar(row.item.driId, 20)}
-                      <Text type="secondary">{dri.name}</Text>
+                  <div className="queue-hit-top">
+                    <div className="queue-hit-title-wrap">
+                      <Badge status={light === "red" ? "error" : light === "yellow" ? "warning" : "default"} />
+                      <Text strong ellipsis={{ tooltip: `${row.laneName} · ${stage?.name}` }} className="queue-hit-name">
+                        {row.laneName}
+                      </Text>
+                    </div>
+                    <span className="queue-hit-facts">
+                      <Tag color="blue" className="queue-hit-stage">
+                        {stage?.short ?? row.item.stage}
+                      </Tag>
+                      {meta && <Tag color={meta.color}>{meta.label}</Tag>}
+                      <Text type={light === "red" ? "danger" : light === "yellow" ? "warning" : "secondary"} className="queue-hit-due">
+                        {remainLabel(row.item.dueAt)}
+                      </Text>
+                      <span className="queue-hit-dri">
+                        {avatar(row.item.driId, 18)}
+                        <Text type="secondary">{dri.name}</Text>
+                      </span>
+                      {showNudge ? (
+                        <span
+                          role="button"
+                          className="queue-hit-nudge-btn"
+                          title="一键生成催办提醒文案并复制到剪贴板"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onNudge(row.item, lane);
+                          }}
+                        >
+                          <BellOutlined style={{ marginRight: 3, fontSize: "0.72rem" }} />
+                          催办
+                        </span>
+                      ) : null}
                     </span>
-                  </span>
+                  </div>
+                  {row.reason ? (
+                    <div className="queue-hit-sub">
+                      <div className="queue-hit-row">
+                        <span className="queue-hit-pill pill-reason">原因</span>
+                        <span className="queue-hit-desc">{row.reason}</span>
+                      </div>
+                      <div className="queue-hit-row">
+                        <span className="queue-hit-pill pill-action">建议</span>
+                        <span className="queue-hit-action-desc">{row.suggestedAction}</span>
+                      </div>
+                    </div>
+                  ) : null}
                 </button>
               );
             })}
@@ -245,6 +291,10 @@ function ClickableBar({
       } else {
         onStage?.(stage);
       }
+      window.setTimeout(() => {
+        const stageCol = document.getElementById(`flow-col-${stage}`);
+        stageCol?.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+      }, 50);
     }
   };
 
@@ -381,7 +431,7 @@ function StageProcessChart({
         <span>锁定 {totalBlocked}</span>
       </div>
       <div className={`stage-bars-chart ${activeStage || chartFilter?.stage ? "is-filtered" : ""}`}>
-        <ResponsiveContainer width="100%" height={136}>
+        <ResponsiveContainer width="100%" height={165}>
           <BarChart data={bars} barCategoryGap="20%" margin={{ top: 6, right: 6, left: 0, bottom: 0 }}>
             <defs>
               <linearGradient id="segDone" x1="0" y1="0" x2="0" y2="1">

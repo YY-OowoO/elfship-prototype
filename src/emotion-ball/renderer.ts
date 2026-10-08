@@ -127,6 +127,7 @@ export interface BallRenderer {
 export function createBall(container: HTMLElement, opts: EmotionBallOptions = {}): BallRenderer {
   const id = 'eb' + uid++;
   const lite = !!opts.lite;
+  const noBlink = true; // 强制禁止闭眼模式
   let shapeKey: ShapeType = (opts.shape as ShapeType) || 'blob';
   let shape = SHAPES[shapeKey] || SHAPES.blob;
   let face = shape.face;
@@ -215,9 +216,10 @@ export function createBall(container: HTMLElement, opts: EmotionBallOptions = {}
   }
 
   function buildEye(k: number): EyeNode {
+    const defaultRing = noBlink ? EXPRESSIONS[9][k] : EXPRESSIONS[0][k];
     const node = el('path', { fill: '#1A1A1A', stroke: 'none', 'stroke-width': '1.6' });
-    node.setAttribute('d', ringPath(EXPRESSIONS[0][k]));
-    return { node, ring: EXPRESSIONS[0][k], c: centroid(EXPRESSIONS[0][k]) };
+    node.setAttribute('d', ringPath(defaultRing));
+    return { node, ring: defaultRing, c: centroid(defaultRing) };
   }
 
   const eyeL = buildEye(0);
@@ -229,7 +231,9 @@ export function createBall(container: HTMLElement, opts: EmotionBallOptions = {}
   const fxFront = el('g', { 'pointer-events': 'none' });
   svg.appendChild(fxFront);
 
-  const BASE_C: [Point2D, Point2D] = [centroid(EXPRESSIONS[0][0]), centroid(EXPRESSIONS[0][1])];
+  const initialLeft = noBlink ? EXPRESSIONS[9][0] : EXPRESSIONS[0][0];
+  const initialRight = noBlink ? EXPRESSIONS[9][1] : EXPRESSIONS[0][1];
+  const BASE_C: [Point2D, Point2D] = [centroid(initialLeft), centroid(initialRight)];
 
   /* ---- zzz 睡眠粒子 ---- */
   let zzzNodes: SVGTextElement[] | null = null;
@@ -464,7 +468,34 @@ export function createBall(container: HTMLElement, opts: EmotionBallOptions = {}
   }
 
   function setEye(eye: EyeNode, pose: Pose['left'], k: number, sketch: number, yaw: number) {
-    const ring = pose.ring;
+    let ring = pose.ring;
+    if (ring) {
+      if (
+        ring === EXPRESSIONS[2][k] ||
+        ring === EXPRESSIONS[4][k] ||
+        ring === EXPRESSIONS[7][k] ||
+        ring === EXPRESSIONS[8][k] ||
+        ring === EXPRESSIONS[13][k] ||
+        ring === EXPRESSIONS[16][k] ||
+        ring === EXPRESSIONS[21][k] ||
+        ring === EXPRESSIONS[22][k]
+      ) {
+        ring = EXPRESSIONS[9][k];
+      } else {
+        let minX = 1e9, maxX = -1e9, minY = 1e9, maxY = -1e9;
+        for (let i = 0; i < ring.length; i++) {
+          if (ring[i][0] < minX) minX = ring[i][0];
+          if (ring[i][0] > maxX) maxX = ring[i][0];
+          if (ring[i][1] < minY) minY = ring[i][1];
+          if (ring[i][1] > maxY) maxY = ring[i][1];
+        }
+        const w = maxX - minX;
+        const h = maxY - minY;
+        if (w > 0 && h / w < 0.52) {
+          ring = EXPRESSIONS[9][k];
+        }
+      }
+    }
     if (ring && ring !== eye.ring) {
       eye.ring = ring;
       eye.node.setAttribute('d', ringPath(ring));
@@ -472,9 +503,10 @@ export function createBall(container: HTMLElement, opts: EmotionBallOptions = {}
     }
 
     const base = eye.c || BASE_C[k];
-    const open = clamp(pose.open, 0.02, 2.4);
-    const sy = clamp(pose.scaleY * open * face.eye, 0.02, 2.4);
-    const sxBase = pose.scaleX * face.eye;
+    const minOpen = 1.0;
+    const open = clamp(Math.max(1, pose.open || 1), minOpen, 2.4);
+    const sy = clamp(Math.max(1, (pose.scaleY || 1) * open * face.eye), minOpen, 2.4);
+    const sxBase = Math.max(0.9, (pose.scaleX || 1) * face.eye);
 
     const halfH = EYE_HALF * sy + 2;
     let ey0 = HEAD_C + face.y + (base[1] - HEAD_C) * face.sy + pose.y + pose.lookY;
@@ -497,6 +529,9 @@ export function createBall(container: HTMLElement, opts: EmotionBallOptions = {}
     const dyN = (ey0 - HEAD_C) / 130;
     const fy = Math.sqrt(1 - dyN * dyN * 0.22);
 
+    const finalSy = Math.max(0.85, sy * fy);
+    const finalSx = Math.max(0.85, Math.abs(sxBase * cn));
+
     eye.node.setAttribute(
       'transform',
       'translate(' +
@@ -506,9 +541,9 @@ export function createBall(container: HTMLElement, opts: EmotionBallOptions = {}
         ')' +
         (pose.rotate ? ' rotate(' + r2(pose.rotate) + ')' : '') +
         ' scale(' +
-        r2(sxBase * cn) +
+        r2(finalSx) +
         ' ' +
-        r2(sy * fy) +
+        r2(finalSy) +
         ')' +
         ' translate(' +
         r2(-base[0]) +
@@ -517,14 +552,27 @@ export function createBall(container: HTMLElement, opts: EmotionBallOptions = {}
         ')'
     );
 
-    const fill = sketch > 0.5 ? 'none' : pose.color;
-    const stroke = sketch > 0.5 ? 'var(--sketch-ink, ' + pose.color + ')' : '';
+    // In sketch mode, ensure high-contrast eye ink fill so expressions are never washed out or obscured
+    const eyeInk =
+      pose.color && pose.color !== '#FFFFFF' && pose.color !== '#fff' && pose.color !== '#ffffff'
+        ? pose.color
+        : '#3b0764';
+    const fill = sketch > 0.5 ? eyeInk : pose.color;
+    const stroke = sketch > 0.5 ? 'var(--sketch-ink, ' + eyeInk + ')' : '';
+
     if (fill !== eye.lastFill) {
       eye.node.setAttribute('fill', fill);
       eye.lastFill = fill;
     }
     if (stroke !== eye.lastStroke) {
       eye.node.style.stroke = stroke;
+      if (sketch > 0.5) {
+        eye.node.setAttribute('stroke-width', '2.6');
+        eye.node.setAttribute('stroke-linecap', 'round');
+        eye.node.setAttribute('stroke-linejoin', 'round');
+      } else {
+        eye.node.setAttribute('stroke-width', '1.6');
+      }
       eye.lastStroke = stroke;
     }
   }
@@ -558,13 +606,23 @@ export function createBall(container: HTMLElement, opts: EmotionBallOptions = {}
     if (sketch !== curSketch) {
       curSketch = sketch;
       if (sketch > 0.5) {
-        head.setAttribute('fill', 'none');
-        head.style.stroke = 'var(--sketch-ink, ' + shade(b.color, -0.6) + ')';
-        head.setAttribute('stroke-opacity', '0.85');
+        head.setAttribute('fill', 'rgba(124, 58, 237, 0.08)');
+        head.style.stroke = 'var(--sketch-ink, ' + (b.color || '#7c3aed') + ')';
+        head.setAttribute('stroke-width', '3.5');
+        head.setAttribute('stroke-dasharray', '5 2');
+        head.setAttribute('stroke-linecap', 'round');
+        head.setAttribute('stroke-linejoin', 'round');
+        head.setAttribute('stroke-opacity', '0.95');
       } else {
         head.setAttribute('fill', 'url(#' + id + 'g)');
         head.style.stroke = '';
+        head.removeAttribute('stroke-dasharray');
+        head.setAttribute('stroke-width', '2');
       }
+    }
+
+    if (sketch > 0.5) {
+      head.style.stroke = 'var(--sketch-ink, ' + (b.color || '#7c3aed') + ')';
     }
 
     const yaw = b.yaw || 0;

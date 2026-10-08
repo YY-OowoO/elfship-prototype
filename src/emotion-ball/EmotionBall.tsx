@@ -23,6 +23,7 @@ export interface EmotionBallProps {
   eyeScale?: number;
   sketch?: boolean | number;
   interactive?: boolean;
+  noBlink?: boolean;
   idle?: boolean | EmotionBallOptions['idle'];
   lite?: boolean;
   autostart?: boolean;
@@ -45,6 +46,7 @@ export const EmotionBall = forwardRef<EmotionBallInstance, EmotionBallProps>(fun
     eyeScale,
     sketch = 0,
     interactive = true,
+    noBlink = true,
     idle = true,
     lite = false,
     autostart = true,
@@ -72,6 +74,7 @@ export const EmotionBall = forwardRef<EmotionBallInstance, EmotionBallProps>(fun
       eyeColor,
       eyeScale,
       sketch: typeof sketch === 'boolean' ? (sketch ? 1 : 0) : sketch,
+      noBlink,
       idle,
       lite,
       autostart,

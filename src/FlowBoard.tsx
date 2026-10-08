@@ -15,24 +15,30 @@ import {
   useSensors,
   type CollisionDetection,
   type DragEndEvent,
+  type DragCancelEvent,
   type DragOverEvent,
-  type DragMoveEvent,
   type DragStartEvent,
   type DropAnimation,
   type KeyboardCoordinateGetter,
-  type Modifier,
 } from "@dnd-kit/core";
-import { getEventCoordinates } from "@dnd-kit/utilities";
 import NumberFlow from "@number-flow/react";
-import { Button, Drawer, Input, Popover, Space, Tag, Tooltip, Typography } from "antd";
+import { Button, Drawer, Input, Popover, Segmented, Tag, Tooltip, Typography, message } from "antd";
 import {
-  AppstoreOutlined,
-  UserOutlined,
-  FolderOutlined,
-  ThunderboltOutlined,
-  SearchOutlined,
-  ExportOutlined,
-} from "@ant-design/icons";
+  Kanban,
+  UserCircle,
+  Folder,
+  StageIcon,
+  MagnifyingGlass,
+  FastForward,
+  Lightning,
+  ArrowCounterClockwise,
+  ArrowRight,
+  Crosshair,
+  HourglassMedium,
+  LockKey,
+  WarningOctagon,
+  CheckCircle,
+} from "./icons";
 
 const { Text } = Typography;
 import { STAGES } from "./mock";
@@ -43,15 +49,18 @@ import {
   groupLanesByDri,
   groupLanesByType,
   itemLight,
+  nextActiveStageForLane,
   nextStageKey,
   occupants,
   remainLabel,
+  stageIndex,
   stageRollup,
   stateLabel,
 } from "./logic";
 import { CARD_CAP, StageProgress, WorkCard } from "./ui";
 import { KanbanFlip } from "./motion/KanbanFlip";
 import { EmotionBall, dispatchElfEvent } from "./emotion-ball";
+import { playSound } from "./sound";
 import type { LaunchBatch, PersonId, ResourceLane, StageKey, SwimlaneDimension, WorkItem } from "./types";
 
 function laneDragId(laneId: string) {
@@ -70,12 +79,49 @@ function parseColId(id: string): StageKey | null {
   return id.startsWith("col:") ? (id.slice(4) as StageKey) : null;
 }
 
+/**
+ * Intelligent Kanban column collision detection:
+ * 1. Prioritizes direct pointer intersection within column boundaries
+ * 2. If pointer is outside direct vertical column bounds (e.g. above/below header),
+ *    smoothly projects horizontal X coordinate to the nearest stage column center.
+ * 3. Prevents target flickering when moving cards swiftly between adjacent columns.
+ */
 const columnCollision: CollisionDetection = (args) => {
   const pointerCollisions = pointerWithin(args);
   if (pointerCollisions.length > 0) {
     const col = pointerCollisions.find((c) => String(c.id).startsWith("col:"));
     if (col) return [col];
   }
+
+  const { droppableContainers, pointerCoordinates } = args;
+  if (pointerCoordinates && droppableContainers.length > 0) {
+    const cols = droppableContainers.filter((c) => String(c.id).startsWith("col:"));
+    let closestCol = null;
+    let minDistance = Infinity;
+
+    for (const col of cols) {
+      const rect = args.droppableRects.get(col.id);
+      if (rect) {
+        const inVerticalBand =
+          pointerCoordinates.y >= rect.top - 150 &&
+          pointerCoordinates.y <= rect.bottom + 250;
+
+        if (inVerticalBand) {
+          const colCenter = rect.left + rect.width / 2;
+          const dist = Math.abs(pointerCoordinates.x - colCenter);
+          if (dist < minDistance && dist <= rect.width * 0.95) {
+            minDistance = dist;
+            closestCol = col;
+          }
+        }
+      }
+    }
+
+    if (closestCol) {
+      return [{ id: closestCol.id, data: { value: minDistance } }];
+    }
+  }
+
   return rectIntersection(args);
 };
 
@@ -94,53 +140,6 @@ const boardKeyboardCoordinates: KeyboardCoordinateGetter = (event, { currentCoor
   }
 };
 
-/**
- * Snap the geometric center of the drag overlay onto the mouse pointer.
- *
- * Uses `draggingNodeRect` (the overlay's own measured rect, matching the
- * official @dnd-kit/modifiers implementation) and falls back to
- * `activeNodeRect` when the overlay hasn't been measured yet.
- *
- * `getEventCoordinates` from @dnd-kit/utilities handles native PointerEvent /
- * MouseEvent / TouchEvent.  We add a manual fallback for edge-cases (React 19
- * synthetic-event wrappers).
- */
-const snapCenterToCursor: Modifier = ({
-  activatorEvent,
-  draggingNodeRect,
-  activeNodeRect,
-  transform,
-}) => {
-  const rect = draggingNodeRect ?? activeNodeRect;
-  if (!activatorEvent || !rect) return transform;
-
-  // Extract click coordinates – native events first, then manual fallback.
-  const coords = getEventCoordinates(activatorEvent)
-    ?? extractClientXY(activatorEvent);
-  if (!coords) return transform;
-
-  const offsetX = coords.x - rect.left;
-  const offsetY = coords.y - rect.top;
-
-  return {
-    ...transform,
-    x: transform.x + offsetX - rect.width / 2,
-    y: transform.y + offsetY - rect.height / 2,
-  };
-};
-
-/** Fallback coordinate extractor for React 19 synthetic-event edge-cases. */
-function extractClientXY(event: Event | null): { x: number; y: number } | null {
-  if (!event) return null;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const e = event as any;
-  if (typeof e.clientX === "number") return { x: e.clientX, y: e.clientY };
-  const native = e.nativeEvent;
-  if (native && typeof native.clientX === "number")
-    return { x: native.clientX, y: native.clientY };
-  return null;
-}
-
 type OverlayCard = {
   lane: ResourceLane;
   item: WorkItem;
@@ -148,7 +147,7 @@ type OverlayCard = {
   width: number;
 };
 
-function DraggableWorkCard({
+const DraggableWorkCard = memo(function DraggableWorkCard({
   lane,
   item,
   extra,
@@ -160,10 +159,12 @@ function DraggableWorkCard({
   isDateFocus,
   isDateDimmed,
   isHighlighted,
+  isKeyboardFocused,
   onHoverBlocker,
   onHoverCard,
   quickAction,
   onNudge,
+  detailed,
   onOpen,
 }: {
   lane: ResourceLane;
@@ -177,10 +178,12 @@ function DraggableWorkCard({
   isDateFocus?: boolean;
   isDateDimmed?: boolean;
   isHighlighted?: boolean;
+  isKeyboardFocused?: boolean;
   onHoverBlocker?: (hovering: boolean) => void;
   onHoverCard?: (hovering: boolean) => void;
   quickAction?: { label: string; onClick: () => void; icon?: string };
   onNudge?: () => void;
+  detailed?: boolean;
   onOpen: () => void;
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
@@ -200,85 +203,51 @@ function DraggableWorkCard({
     if (Date.now() - dragAtRef.current < 300) return;
     onOpenRef.current();
   }, []);
+  const cardDomRef = useRef<HTMLDivElement | null>(null);
+  const handleRef = useCallback(
+    (el: HTMLDivElement | null) => {
+      setNodeRef(el);
+      cardDomRef.current = el;
+    },
+    [setNodeRef],
+  );
+
+  useEffect(() => {
+    if (isKeyboardFocused && cardDomRef.current) {
+      cardDomRef.current.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
+    }
+  }, [isKeyboardFocused]);
+
   const handleProps = useMemo(
     () => ({ ...listeners, ...attributes, onKeyDown: isDragging ? undefined : listeners?.onKeyDown }),
     [listeners, attributes, isDragging],
   );
   return (
     <div
-      ref={setNodeRef}
+      ref={handleRef}
       className={`k-drag${ghost ? " is-ghost" : ""}${landing ? " is-land" : ""}${isDragging ? " is-dragging" : ""}`}
       {...listeners}
-      onKeyDown={undefined}
+      {...attributes}
     >
-      <InnerCard
-        lane={lane}
+      <WorkCard
+        name={lane.name}
         item={item}
         extra={extra}
         onOpen={guardedOpen}
-        handleProps={handleProps}
+        dragHandle={handleProps as ButtonHTMLAttributes<HTMLButtonElement>}
         isDependencyTarget={isDependencyTarget}
         isDependencyDimmed={isDependencyDimmed}
         isDateFocus={isDateFocus}
         isDateDimmed={isDateDimmed}
         isHighlighted={isHighlighted}
+        isKeyboardFocused={isKeyboardFocused}
         onHoverBlocker={onHoverBlocker}
         onHoverCard={onHoverCard}
         quickAction={quickAction}
         onNudge={onNudge}
+        detailed={detailed}
       />
     </div>
-  );
-}
-
-const InnerCard = memo(function InnerCard({
-  lane,
-  item,
-  extra,
-  onOpen,
-  handleProps,
-  isDependencyTarget,
-  isDependencyDimmed,
-  isDateFocus,
-  isDateDimmed,
-  isHighlighted,
-  onHoverBlocker,
-  onHoverCard,
-  quickAction,
-  onNudge,
-}: {
-  lane: ResourceLane;
-  item: WorkItem;
-  extra?: string;
-  onOpen: () => void;
-  handleProps: Record<string, unknown>;
-  isDependencyTarget?: boolean;
-  isDependencyDimmed?: boolean;
-  isDateFocus?: boolean;
-  isDateDimmed?: boolean;
-  isHighlighted?: boolean;
-  onHoverBlocker?: (hovering: boolean) => void;
-  onHoverCard?: (hovering: boolean) => void;
-  quickAction?: { label: string; onClick: () => void; icon?: string };
-  onNudge?: () => void;
-}) {
-  return (
-    <WorkCard
-      name={lane.name}
-      item={item}
-      extra={extra}
-      onOpen={onOpen}
-      dragHandle={handleProps as ButtonHTMLAttributes<HTMLButtonElement>}
-      isDependencyTarget={isDependencyTarget}
-      isDependencyDimmed={isDependencyDimmed}
-      isDateFocus={isDateFocus}
-      isDateDimmed={isDateDimmed}
-      isHighlighted={isHighlighted}
-      onHoverBlocker={onHoverBlocker}
-      onHoverCard={onHoverCard}
-      quickAction={quickAction}
-      onNudge={onNudge}
-    />
   );
 });
 
@@ -294,6 +263,7 @@ export function FlowBoard({
   hoveredDate,
   hoveredLaneId,
   setHoveredLaneId,
+  focusedCardId,
   onNudge,
 }: {
   batch: LaunchBatch;
@@ -307,6 +277,7 @@ export function FlowBoard({
   hoveredDate?: string | null;
   hoveredLaneId?: string | null;
   setHoveredLaneId?: (id: string | null) => void;
+  focusedCardId?: string | null;
   onNudge?: (item: WorkItem, lane: ResourceLane) => void;
 }) {
   const [activeLaneId, setActiveLaneId] = useState<string | null>(null);
@@ -326,6 +297,7 @@ export function FlowBoard({
     const onKey = (e: globalThis.KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || (e.target as HTMLElement)?.isContentEditable) return;
+      if (!e.altKey) return;
       const num = parseInt(e.key, 10);
       if (num >= 1 && num <= STAGES.length) {
         const targetStage = STAGES[num - 1].key;
@@ -349,11 +321,11 @@ export function FlowBoard({
     checkin: null,
   });
   const closingRef = useRef(false);
-  const bindColRef = useCallback((stage: StageKey) => (node: HTMLDivElement | null) => {
+  const registerColRef = useCallback((stage: StageKey, node: HTMLDivElement | null) => {
     colRefs.current[stage] = node;
   }, []);
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 3 } }),
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(KeyboardSensor, { coordinateGetter: boardKeyboardCoordinates }),
   );
 
@@ -367,20 +339,18 @@ export function FlowBoard({
     [batch],
   );
 
+  const [cardDensity, setCardDensity] = useState<"compact" | "detailed">("compact");
   const driGroups = useMemo(() => groupLanesByDri(batch.lanes), [batch.lanes]);
   const typeGroups = useMemo(() => groupLanesByType(batch.lanes), [batch.lanes]);
 
   const active = activeLaneId ? batch.lanes.find((l) => l.id === activeLaneId) : null;
   const activeItem = active ? currentItem(active) : null;
-  const nextKey = activeItem ? nextStageKey(activeItem.stage) : null;
+  const nextKey = active && activeItem ? nextActiveStageForLane(active, activeItem.stage) : null;
   const ready = activeItem ? canConfirm(activeItem, actor) === null : false;
 
-  const lastPosRef = useRef<{ x: number; y: number; time: number } | null>(null);
-  const tiltTimerRef = useRef<number | null>(null);
-
   const dropAnimation: DropAnimation = {
-    duration: 220,
-    easing: "cubic-bezier(0.16, 1, 0.3, 1)",
+    duration: 160,
+    easing: "cubic-bezier(0.18, 0.89, 0.32, 1.1)",
     keyframes: ({ dragOverlay }) => {
       const target = dropSlotRectRef.current;
       const fallback = dropDestRef.current
@@ -394,34 +364,28 @@ export function FlowBoard({
         scaleX: 1,
         scaleY: 1,
       };
-      return [
-        { ...end, x: end.x, y: end.y + 2, scaleX: 0.98, scaleY: 0.98 },
-        { ...end, x: end.x, y: end.y, scaleX: 1, scaleY: 1 },
-      ];
+      return [{ ...end, x: end.x, y: end.y }];
     },
   };
 
   function handleDragStart(e: DragStartEvent) {
     if (closingRef.current) return;
     closingRef.current = false;
-    lastPosRef.current = null;
-    if (tiltTimerRef.current) {
-      window.clearTimeout(tiltTimerRef.current);
-      tiltTimerRef.current = null;
-    }
-    document.documentElement.style.setProperty("--drag-tilt", "0deg");
+    setOverlayCard(null);
     document.documentElement.classList.add("is-board-drag");
     const laneId = parseLaneId(String(e.active.id));
     const lane = laneId ? batch.lanes.find((row) => row.id === laneId) : null;
     const item = lane ? currentItem(lane) : null;
     if (!laneId || !lane || !item) return;
 
+    playSound.click();
     setActiveLaneId(laneId);
+    const rect = e.active.rect.current as any;
     setOverlayCard({
       lane,
       item,
       extra: stateLabel(item),
-      width: e.active.rect.current.initial?.width ?? 168,
+      width: Math.max(168, rect?.width ?? rect?.initial?.width ?? 168),
     });
     const source = item.stage;
     if (source) setFocusStages([source]);
@@ -430,36 +394,25 @@ export function FlowBoard({
 
   function handleDragOver(e: DragOverEvent) {
     const next = e.over ? parseColId(String(e.over.id)) : null;
-    setOverStage((cur) => (cur === next ? cur : next));
+    setOverStage((cur) => {
+      if (cur !== next) {
+        if (next && next === nextKey && ready) {
+          playSound.focus();
+        }
+        return next;
+      }
+      return cur;
+    });
   }
 
-  function handleDragMove(e: DragMoveEvent) {
-    if (!e.delta) return;
-    const now = performance.now();
-    let instantVx = 0;
-    if (lastPosRef.current) {
-      const dt = Math.max(1, now - lastPosRef.current.time);
-      instantVx = ((e.delta.x - lastPosRef.current.x) / dt) * 16;
-    }
-    lastPosRef.current = { x: e.delta.x, y: e.delta.y, time: now };
-
-    const targetRot = Math.max(-4, Math.min(4, instantVx * 0.45));
-    document.documentElement.style.setProperty("--drag-tilt", `${targetRot.toFixed(2)}deg`);
-
-    if (tiltTimerRef.current) window.clearTimeout(tiltTimerRef.current);
-    tiltTimerRef.current = window.setTimeout(() => {
-      document.documentElement.style.setProperty("--drag-tilt", "0deg");
-    }, 80);
-  }
-
-  function finishDrag(e: DragEndEvent) {
+  function finishDrag(e: DragEndEvent | DragCancelEvent) {
     const laneId = parseLaneId(String(e.active.id));
     const lane = laneId ? batch.lanes.find((l) => l.id === laneId) : null;
     const item = lane ? currentItem(lane) : null;
     const dest = e.over ? parseColId(String(e.over.id)) : null;
+    const hasDestination = Boolean(dest);
     const sourceStage = item?.stage;
-    const allowed = item ? nextStageKey(item.stage) : null;
-    const ok = dest && allowed === dest;
+    const allowed = lane && item ? nextActiveStageForLane(lane, item.stage) : null;
 
     dropDestRef.current = dest;
 
@@ -485,94 +438,261 @@ export function FlowBoard({
       dropSlotRectRef.current = null;
     }
 
-    setSettling(true);
+    setSettling(hasDestination);
+    setOverlayCard(null);
     setActiveLaneId(null);
     setOverStage(null);
-
-    if (dest && !ok && item) {
-      window.setTimeout(() => onOpen(item.id), 260);
-      if (sourceStage) setFocusStages([sourceStage]);
-      dispatchElfEvent("drag_end");
-    } else if (ok && laneId && dest && lane) {
-      setLandingId(laneId);
-      if (sourceStage) setFocusStages([sourceStage, dest]);
-      onDropLane(laneId, dest);
-      const destStageName = STAGES.find((s) => s.key === dest)?.name || dest;
-      dispatchElfEvent("stage_advanced", {
-        message: `【${lane.name}】已成功流转至【${destStageName}】！`,
-        action: "burst",
-      });
-      window.setTimeout(() => setLandingId((cur) => (cur === laneId ? null : cur)), 420);
-      window.setTimeout(() => setFocusStages([]), 420);
-    } else {
-      dispatchElfEvent("drag_end");
-    }
-
     document.documentElement.classList.remove("is-board-drag");
-    document.documentElement.style.removeProperty("--drag-tilt");
-    window.setTimeout(() => {
+
+    if (!laneId || !lane || !item || !dest) {
+      if (sourceStage) setFocusStages([]);
+      dispatchElfEvent("drag_end");
       dropSlotRectRef.current = null;
       setSettling(false);
-    }, 320);
+      closingRef.current = false;
+      return;
+    }
+
+    // 1. Dropped on the same stage -> silent reset
+    if (dest === item.stage) {
+      dispatchElfEvent("drag_end");
+      if (sourceStage) setFocusStages([]);
+      dropSlotRectRef.current = null;
+      setSettling(false);
+      closingRef.current = false;
+      return;
+    }
+
+    // 2. Check if the item is locked by upstream blockers
+    if (item.locked) {
+      playSound.reject();
+      message.error(`【${lane.name}】前置工序存在卡点阻塞，已被锁定，暂无法推进流转！`);
+      dispatchElfEvent("drag_end");
+      if (sourceStage) setFocusStages([]);
+      dropSlotRectRef.current = null;
+      setSettling(false);
+      closingRef.current = false;
+      return;
+    }
+
+    // 3. Strict sequential pipeline check (must not skip stages)
+    if (dest !== allowed) {
+      playSound.reject();
+      const destName = STAGES.find((s) => s.key === dest)?.name || dest;
+      const srcName = STAGES.find((s) => s.key === item.stage)?.name || item.stage;
+      const targetName = allowed ? STAGES.find((s) => s.key === allowed)?.name : null;
+      const fromIdx = stageIndex(item.stage);
+      const toIdx = stageIndex(dest);
+
+      if (toIdx < fromIdx) {
+        message.warning(`【${lane.name}】不可逆向流转至已完工的【${destName}】工序。如需退回返工，请在卡片详情中操作。`);
+      } else if (targetName) {
+        message.warning(`【${lane.name}】研发工序不可跨阶段跳过！当前处于【${srcName}】，请按流程流转至【${targetName}】。`);
+      } else {
+        message.info(`【${lane.name}】已至最后阶段或暂无可流转工序`);
+      }
+      dispatchElfEvent("drag_end");
+      if (sourceStage) setFocusStages([]);
+      dropSlotRectRef.current = null;
+      setSettling(false);
+      closingRef.current = false;
+      return;
+    }
+
+    // 4. Gate criteria check
+    const confirmReason = canConfirm(item, actor);
+    if (confirmReason) {
+      playSound.reject();
+      message.warning(`【${lane.name}】未满足【${STAGES.find((s) => s.key === item.stage)?.name}】门禁准出要求：${confirmReason}`);
+      onOpen(item.id);
+      dispatchElfEvent("drag_end");
+      if (sourceStage) setFocusStages([]);
+      dropSlotRectRef.current = null;
+      setSettling(false);
+      closingRef.current = false;
+      return;
+    }
+
+    // 5. Valid and passed gates! Advance stage
+    playSound.confirm();
+    setLandingId(laneId);
+    if (sourceStage) setFocusStages([sourceStage, dest]);
+    onDropLane(laneId, dest);
+    const destStageName = STAGES.find((s) => s.key === dest)?.name || dest;
+    dispatchElfEvent("stage_advanced", {
+      message: `【${lane.name}】已成功流转至【${destStageName}】！`,
+      action: "burst",
+    });
+    window.setTimeout(() => setLandingId((cur) => (cur === laneId ? null : cur)), 380);
+    window.setTimeout(() => setFocusStages([]), 380);
+
+    if (hasDestination) {
+      window.setTimeout(() => {
+        dropSlotRectRef.current = null;
+        setSettling(false);
+      }, 260);
+    } else {
+      dropSlotRectRef.current = null;
+      setSettling(false);
+    }
     closingRef.current = false;
   }
 
+  const handleColumnFilter = useCallback(
+    (stageKey: StageKey) => {
+      onFilter(stageFilter === stageKey ? null : stageKey);
+      document
+        .getElementById(`flow-col-${stageKey}`)
+        ?.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+    },
+    [onFilter, stageFilter],
+  );
+
+  const totalConfirmed = useMemo(() => {
+    return batch.lanes.flatMap((l) => l.items).filter((i) => i.state === "confirmed" || i.skipped).length;
+  }, [batch]);
+  const totalWip = useMemo(() => {
+    return batch.lanes.flatMap((l) => l.items).filter((i) => i.state === "submitted" || i.state === "rework").length;
+  }, [batch]);
+  const totalBlocked = useMemo(() => {
+    return batch.lanes.flatMap((l) => l.items).filter((i) => !i.locked && itemLight(i) === "red").length;
+  }, [batch]);
+
   return (
-    <div className="flow-board-wrap">
-      {onSwimlaneDimChange ? (
-        <div className="swimlane-controls">
-          <span className="swimlane-label">看板视图：</span>
-          <div className="swimlane-tabs">
-            <button
-              type="button"
-              className={`swimlane-tab${swimlaneDim === "stage" ? " active" : ""}`}
-              onClick={() => onSwimlaneDimChange("stage")}
-            >
-              <AppstoreOutlined style={{ marginRight: 4 }} />
-              流程阶段 (7)
-            </button>
-            <button
-              type="button"
-              className={`swimlane-tab${swimlaneDim === "dri" ? " active" : ""}`}
-              onClick={() => onSwimlaneDimChange("dri")}
-            >
-              <UserOutlined style={{ marginRight: 4 }} />
-              按负责人 ({driGroups.length})
-            </button>
-            <button
-              type="button"
-              className={`swimlane-tab${swimlaneDim === "type" ? " active" : ""}`}
-              onClick={() => onSwimlaneDimChange("type")}
-            >
-              <FolderOutlined style={{ marginRight: 4 }} />
-              按资源类型 ({typeGroups.length})
-            </button>
+    <div className="flow-board-wrap" id="main-flow-board">
+      {/* Hero Kanban Header Banner (突出主看板的绝对中心地位) */}
+      <div className="flow-board-hero-banner">
+        <div className="fb-hero-left">
+          <div className="fb-hero-title-group">
+            <div className="fb-hero-icon-box">
+              <Kanban size={18} weight="fill" style={{ color: "#2563eb" }} />
+            </div>
+            <div>
+              <div className="fb-hero-heading">
+                <span className="fb-hero-main-title">交付主看板 · 7 节点工序流转</span>
+                <span className="fb-hero-status-tag">核心执行中枢</span>
+                {stageFilter && (
+                  <Tag
+                    closable
+                    onClose={() => onFilter(null as any)}
+                    color="processing"
+                    style={{ margin: 0, fontSize: 11, display: "inline-flex", alignItems: "center" }}
+                  >
+                    已聚焦: {STAGES.find((s) => s.key === stageFilter)?.name}
+                  </Tag>
+                )}
+              </div>
+              <div className="fb-hero-sub-stats">
+                <span>共 <b>{batch.lanes.length}</b> 项交付资产</span>
+                <span className="fb-stat-dot">·</span>
+                <span style={{ color: "#16a34a" }}><b>{totalConfirmed}</b> 步通关</span>
+                <span className="fb-stat-dot">·</span>
+                <span style={{ color: "#2563eb" }}><b>{totalWip}</b> 步在制推进</span>
+                {totalBlocked > 0 && (
+                  <>
+                    <span className="fb-stat-dot">·</span>
+                    <span className="fb-hero-danger-pill">
+                      <span className="cockpit-mini-pulse" />
+                      <b>{totalBlocked}</b> 项 P0 阻断
+                    </span>
+                  </>
+                )}
+              </div>
+            </div>
           </div>
         </div>
-      ) : null}
+
+        <div className="fb-hero-right">
+          {onSwimlaneDimChange && (
+            <div className="fb-segmented-wrap">
+              <Segmented
+                value={swimlaneDim}
+                onChange={(v) => {
+                  onSwimlaneDimChange(v as SwimlaneDimension);
+                  document.getElementById("main-flow-board")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+                }}
+                options={[
+                  {
+                    value: "stage",
+                    label: (
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "2px 4px" }}>
+                        <Kanban size={14} weight={swimlaneDim === "stage" ? "fill" : "regular"} />
+                        工序泳道 (7)
+                      </span>
+                    ),
+                  },
+                  {
+                    value: "dri",
+                    label: (
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "2px 4px" }}>
+                        <UserCircle size={14} weight={swimlaneDim === "dri" ? "fill" : "regular"} />
+                        主责人员 ({driGroups.length})
+                      </span>
+                    ),
+                  },
+                  {
+                    value: "type",
+                    label: (
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "2px 4px" }}>
+                        <Folder size={14} weight={swimlaneDim === "type" ? "fill" : "regular"} />
+                        资产类型 ({typeGroups.length})
+                      </span>
+                    ),
+                  },
+                ]}
+              />
+            </div>
+          )}
+          <div className="fb-segmented-wrap">
+            <Segmented
+              size="small"
+              value={cardDensity}
+              onChange={(v) => {
+                playSound.click();
+                setCardDensity(v as "compact" | "detailed");
+              }}
+              options={[
+                { label: "紧凑视效", value: "compact" },
+                { label: "详细透视", value: "detailed" },
+              ]}
+            />
+          </div>
+        </div>
+      </div>
 
       {swimlaneDim === "stage" ? (
         <DndContext
           sensors={sensors}
           collisionDetection={columnCollision}
-          measuring={{ droppable: { strategy: MeasuringStrategy.BeforeDragging } }}
+          autoScroll={{ threshold: { x: 0.12, y: 0.12 }, acceleration: 8 }}
+          measuring={{ droppable: { strategy: MeasuringStrategy.Always } }}
           onDragStart={handleDragStart}
-          onDragMove={handleDragMove}
           onDragOver={handleDragOver}
           onDragEnd={finishDrag}
           onDragCancel={finishDrag}
         >
           <div className={`kanban${activeLaneId ? " is-dragging" : ""}`}>
             {stageColumns.map(({ st, roll, here }, i) => {
+              const fromIdx = activeItem ? stageIndex(activeItem.stage) : -1;
+              const colIdx = stageIndex(st.key);
+              const isSource = activeItem?.stage === st.key;
+              const isAllowedNext = st.key === nextKey;
+              const isPast = colIdx < fromIdx;
+              const isForbidden = colIdx > fromIdx && !isAllowedNext;
               const tone = !activeLaneId
                 ? null
-                : st.key === nextKey
+                : isAllowedNext
                   ? ready
                     ? "ok"
                     : "wait"
-                  : st.key === activeItem?.stage
+                  : isSource
                     ? "from"
-                    : "dim";
+                    : isPast
+                      ? "past"
+                      : isForbidden
+                        ? "forbidden"
+                        : null;
+
               return (
                 <FlowColumn
                   key={st.key}
@@ -583,13 +703,13 @@ export function FlowBoard({
                   roll={roll}
                   here={here}
                   tone={tone}
-                  hot={overStage === st.key && tone === "ok"}
+                  hot={overStage === st.key}
                   active={stageFilter === st.key}
                   landingId={landingId}
                   activeLaneId={activeLaneId}
                   settling={settling}
-                  flipping={!settling && (focusStages.length === 0 ? st.key === activeItem?.stage : focusStages.includes(st.key))}
-                  registerColRef={bindColRef(st.key)}
+                  flipping={!settling && !activeLaneId && (focusStages.length === 0 ? st.key === activeItem?.stage : focusStages.includes(st.key))}
+                  registerColRef={registerColRef}
                   actor={actor}
                   dependencyInfo={dependencyInfo}
                   hoveredBlockerLaneId={hoveredBlockerLaneId}
@@ -597,14 +717,11 @@ export function FlowBoard({
                   hoveredDate={hoveredDate}
                   hoveredLaneId={hoveredLaneId}
                   setHoveredLaneId={setHoveredLaneId}
+                  focusedCardId={focusedCardId}
+                  detailed={cardDensity === "detailed"}
                   onNudge={onNudge}
                   onDropLane={onDropLane}
-                  onFilter={() => {
-                    onFilter(stageFilter === st.key ? null : st.key);
-                    document
-                      .getElementById(`flow-col-${st.key}`)
-                      ?.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
-                  }}
+                  onFilter={handleColumnFilter}
                   onOpen={onOpen}
                 />
               );
@@ -615,13 +732,13 @@ export function FlowBoard({
               className="k-drag-layer"
               style={overlayCard ? { width: overlayCard.width } : undefined}
               dropAnimation={dropAnimation}
-              modifiers={[snapCenterToCursor]}
             >
               {overlayCard ? (
                 <OverlayContent
                   lane={overlayCard.lane}
                   item={overlayCard.item}
                   extra={overlayCard.extra}
+                  actor={actor}
                 />
               ) : null}
             </DragOverlay>,
@@ -653,13 +770,39 @@ const OverlayContent = memo(function OverlayContent({
   lane,
   item,
   extra,
+  actor,
 }: {
   lane: ResourceLane;
   item: WorkItem;
   extra?: string;
+  actor: PersonId;
 }) {
+  const currentStageName = STAGES.find((s) => s.key === item.stage)?.name ?? item.stage;
+  const nextKey = nextActiveStageForLane(lane, item.stage);
+  const nextStageName = nextKey ? STAGES.find((s) => s.key === nextKey)?.name : null;
+  const isLocked = item.locked;
+  const gateReason = canConfirm(item, actor);
+
   return (
     <div className="k-drag-overlay-inner">
+      <div className={`k-drag-flow-chip ${isLocked ? "chip-locked" : gateReason ? "chip-wait" : "chip-ok"}`}>
+        <span className="chip-stage-from">{currentStageName}</span>
+        <span className="chip-arrow">
+          <ArrowRight size={10} weight="duotone" />
+        </span>
+        <span className="chip-stage-to">
+          {isLocked
+            ? (
+                <>
+                  <LockKey size={11} weight="duotone" color="#fff" style={{ marginRight: 2 }} />
+                  <span style={{ whiteSpace: "nowrap" }}>存在卡点锁定</span>
+                </>
+              )
+            : nextStageName
+              ? `${nextStageName}工序`
+              : "交付完结"}
+        </span>
+      </div>
       <WorkCard name={lane.name} item={item} extra={extra} onOpen={() => undefined} />
     </div>
   );
@@ -701,140 +844,110 @@ const AlternateSwimlaneColumn = memo(function AlternateSwimlaneColumn({
   }, [group.rows, filterKw]);
 
   return (
-    <>
-      <div key={group.key} className="kanban-col" style={{ ["--col" as string]: idx }}>
-        <div className="kanban-head-wrap">
-          <div className="kanban-head">
-            <div className="kanban-stat">
-              <div className="kanban-stat-title" title={group.title}>{group.title}</div>
-              <div className="kanban-stat-value">
-                <NumberFlow value={group.done} />
-                <span className="kanban-stat-suffix">/{group.total}</span>
-              </div>
+    <div className="kanban-col swimlane-group-col" style={{ ["--col" as string]: idx }}>
+      <div className="kanban-head-wrap">
+        <div className="kanban-head alternate-head">
+          <div className="kanban-stat">
+            <span className="kanban-stat-title">{group.title}</span>
+            <div className="kanban-stat-value">
+              <NumberFlow value={group.done} />
+              <span className="kanban-stat-suffix">/{group.total}</span>
             </div>
-            <div className="kanban-meta">{group.sub}</div>
           </div>
-          <StageProgress done={group.done} total={group.total} light={group.done === group.total ? "ok" : "yellow"} />
+          <div className="kanban-meta">{group.sub}</div>
         </div>
-        <div className="kanban-card-stack">
-          {group.rows.length === 0 && (
-            <div className="k-empty" style={{ padding: "20px 8px", display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
-              <EmotionBall emotion="04" size={28} interactive={true} autostart={true} />
-              <span style={{ fontSize: 11, color: "var(--muted)" }}>暂无对应资源</span>
-            </div>
-          )}
-          {shown.map((row) => (
-            <DraggableWorkCard
-              key={row.lane.id}
-              lane={row.lane}
-              item={row.item}
-              extra={stateLabel(row.item)}
-              isDateFocus={hoveredDate ? row.item.dueAt === hoveredDate : false}
-              isDateDimmed={hoveredDate ? row.item.dueAt !== hoveredDate : false}
-              isHighlighted={hoveredLaneId === row.lane.id}
-              onHoverCard={(hovering) => setHoveredLaneId?.(hovering ? row.lane.id : null)}
-              onNudge={onNudge ? () => onNudge(row.item, row.lane) : undefined}
-              onOpen={() => onOpen(row.item.id)}
-            />
-          ))}
-
-          {hasOverflow && (
-            <div className="swimlane-fold-footer">
-              <Popover
-                trigger="click"
-                open={popOpen}
-                onOpenChange={setPopOpen}
-                title={`其余 ${rest.length} 条 · ${group.title}`}
-                content={
-                  <div className="more-list">
-                    {rest.map((row) => (
-                      <DraggableWorkCard
-                        key={row.lane.id}
-                        lane={row.lane}
-                        item={row.item}
-                        extra={stateLabel(row.item)}
-                        isDateFocus={hoveredDate ? row.item.dueAt === hoveredDate : false}
-                        isDateDimmed={hoveredDate ? row.item.dueAt !== hoveredDate : false}
-                        isHighlighted={hoveredLaneId === row.lane.id}
-                        onHoverCard={(hovering) => setHoveredLaneId?.(hovering ? row.lane.id : null)}
-                        onNudge={onNudge ? () => onNudge(row.item, row.lane) : undefined}
-                        onOpen={() => {
-                          setPopOpen(false);
-                          onOpen(row.item.id);
-                        }}
-                      />
-                    ))}
-                  </div>
-                }
-              >
-                <Button type="link" size="small" className="more-btn" style={{ fontSize: 12 }}>
-                  +{rest.length} 浮层速览
-                </Button>
-              </Popover>
-
-              <Button
-                type="text"
-                size="small"
-                icon={<ExportOutlined />}
-                className="swimlane-fold-btn"
-                onClick={() => setDrawerOpen(true)}
-              >
-                全量 ({group.rows.length})
-              </Button>
-            </div>
-          )}
-        </div>
+        <StageProgress done={group.done} total={group.total} light={group.done === group.total ? "ok" : "yellow"} />
       </div>
 
-      {/* Side-Drawer for Full Category Inspection (Never bursts the board height!) */}
-      <Drawer
-        title={
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%", paddingRight: 8 }}>
-            <Space size={8}>
-              <FolderOutlined style={{ color: "var(--brand-primary, #1677ff)" }} />
-              <span style={{ fontWeight: 700 }}>{group.title}</span>
-            </Space>
-            <Tag color="blue">
-              {group.done} / {group.total} 已达成
-            </Tag>
+      <div className="kanban-cards">
+        {shown.map((row) => (
+          <WorkCard
+            key={row.lane.id}
+            name={row.lane.name}
+            item={row.item}
+            extra={stateLabel(row.item)}
+            isDateFocus={hoveredDate ? row.item.dueAt === hoveredDate : false}
+            isDateDimmed={hoveredDate ? row.item.dueAt !== hoveredDate : false}
+            isHighlighted={hoveredLaneId === row.lane.id}
+            onHoverCard={(hovering) => setHoveredLaneId?.(hovering ? row.lane.id : null)}
+            onNudge={onNudge ? () => onNudge(row.item, row.lane) : undefined}
+            onOpen={() => onOpen(row.item.id)}
+          />
+        ))}
+
+        {hasOverflow ? (
+          <div className="swimlane-fold-footer">
+            <Popover
+              trigger="click"
+              open={popOpen}
+              onOpenChange={setPopOpen}
+              title={`其余 ${rest.length} 条 · ${group.title}`}
+              content={
+                <div className="more-list">
+                  {rest.map((row) => (
+                    <WorkCard
+                      key={row.lane.id}
+                      name={row.lane.name}
+                      item={row.item}
+                      extra={stateLabel(row.item)}
+                      onOpen={() => {
+                        setPopOpen(false);
+                        onOpen(row.item.id);
+                      }}
+                    />
+                  ))}
+                </div>
+              }
+            >
+              <Button type="link" size="small" className="more-btn" style={{ fontSize: 12 }}>
+                +{rest.length} 浮层速览
+              </Button>
+            </Popover>
+
+            <Button
+              type="text"
+              size="small"
+              icon={<FastForward size={13} weight="duotone" />}
+              className="swimlane-fold-btn"
+              onClick={() => setDrawerOpen(true)}
+            >
+              全量 ({group.rows.length})
+            </Button>
           </div>
-        }
-        placement="right"
-        width={380}
+        ) : null}
+      </div>
+
+      <Drawer
+        title={`${group.title} · 全部交付资源 (${group.rows.length})`}
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
+        width={420}
+        styles={{ body: { padding: 16 } }}
       >
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <Input
-            prefix={<SearchOutlined style={{ color: "var(--muted)" }} />}
-            placeholder="搜索该分类下的资源..."
-            value={filterKw}
-            onChange={(e) => setFilterKw(e.target.value)}
-            allowClear
-            size="small"
-          />
-          <div style={{ display: "flex", flexDirection: "column", gap: 8, overflowY: "auto" }}>
-            {filteredDrawerRows.map((row) => (
-              <DraggableWorkCard
-                key={row.lane.id}
-                lane={row.lane}
-                item={row.item}
-                extra={stateLabel(row.item)}
-                isDateFocus={hoveredDate ? row.item.dueAt === hoveredDate : false}
-                isDateDimmed={hoveredDate ? row.item.dueAt !== hoveredDate : false}
-                isHighlighted={hoveredLaneId === row.lane.id}
-                onHoverCard={(hovering) => setHoveredLaneId?.(hovering ? row.lane.id : null)}
-                onNudge={onNudge ? () => onNudge(row.item, row.lane) : undefined}
-                onOpen={() => {
-                  setDrawerOpen(false);
-                  onOpen(row.item.id);
-                }}
-              />
-            ))}
-          </div>
+        <Input
+          placeholder="搜索资源名称..."
+          prefix={<MagnifyingGlass size={14} />}
+          value={filterKw}
+          onChange={(e) => setFilterKw(e.target.value)}
+          allowClear
+          style={{ marginBottom: 12 }}
+        />
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {filteredDrawerRows.map((row) => (
+            <WorkCard
+              key={row.lane.id}
+              name={row.lane.name}
+              item={row.item}
+              extra={stateLabel(row.item)}
+              onOpen={() => {
+                setDrawerOpen(false);
+                onOpen(row.item.id);
+              }}
+            />
+          ))}
         </div>
       </Drawer>
-    </>
+    </div>
   );
 });
 
@@ -860,6 +973,8 @@ const FlowColumn = memo(function FlowColumn({
   hoveredDate,
   hoveredLaneId,
   setHoveredLaneId,
+  focusedCardId,
+  detailed,
   onNudge,
   onDropLane,
   onFilter,
@@ -871,14 +986,14 @@ const FlowColumn = memo(function FlowColumn({
   index: number;
   roll: ReturnType<typeof stageRollup>;
   here: Array<{ lane: ResourceLane; item: WorkItem }>;
-  tone: "ok" | "wait" | "from" | "dim" | null;
+  tone: "from" | "ok" | "wait" | "past" | "forbidden" | null;
   hot: boolean;
   active: boolean;
   landingId: string | null;
   activeLaneId: string | null;
   settling: boolean;
   flipping: boolean;
-  registerColRef: (node: HTMLDivElement | null) => void;
+  registerColRef: (stage: StageKey, node: HTMLDivElement | null) => void;
   actor: PersonId;
   dependencyInfo: { blockedLaneIds: string[]; blockedItemIds: string[]; reason: string } | null;
   hoveredBlockerLaneId: string | null;
@@ -886,9 +1001,11 @@ const FlowColumn = memo(function FlowColumn({
   hoveredDate?: string | null;
   hoveredLaneId?: string | null;
   setHoveredLaneId?: (id: string | null) => void;
+  focusedCardId?: string | null;
+  detailed?: boolean;
   onNudge?: (item: WorkItem, lane: ResourceLane) => void;
   onDropLane: (laneId: string, dest: StageKey) => void;
-  onFilter: () => void;
+  onFilter: (stageKey: StageKey) => void;
   onOpen: (id: string) => void;
 }) {
   const [popOpen, setPopOpen] = useState(false);
@@ -902,7 +1019,6 @@ const FlowColumn = memo(function FlowColumn({
   const { setNodeRef } = useDroppable({
     id: colDragId(stage),
     data: { stage },
-    disabled: tone === "dim",
   });
   const shown = here.slice(0, CARD_CAP);
   const rest = here.slice(CARD_CAP);
@@ -914,9 +1030,9 @@ const FlowColumn = memo(function FlowColumn({
   const setRefs = useCallback(
     (node: HTMLDivElement | null) => {
       setNodeRef(node);
-      registerColRef(node);
+      registerColRef(stage, node);
     },
-    [registerColRef, setNodeRef],
+    [registerColRef, setNodeRef, stage],
   );
 
   return (
@@ -927,9 +1043,14 @@ const FlowColumn = memo(function FlowColumn({
       style={{ ["--col" as string]: index }}
     >
       <div className="kanban-head-wrap">
-        <button className="kanban-head" title={`${fullName} (按数字键 ${index + 1} 快速筛选)`} onClick={onFilter}>
+      <button
+        className="kanban-head"
+          title={`${fullName} (按 Alt+${index + 1} 快速筛选)`}
+          onClick={() => onFilter(stage)}
+        >
           <div className="kanban-stat">
-            <div className="kanban-stat-title" title={fullName}>
+            <div className="kanban-stat-title" title={fullName} style={{ display: "flex", alignItems: "center", gap: 5 }}>
+              <StageIcon stage={stage} size={15} />
               <Text ellipsis={{ tooltip: fullName }}>{title}</Text>
             </div>
             <div className="kanban-stat-value">
@@ -946,16 +1067,85 @@ const FlowColumn = memo(function FlowColumn({
         </button>
         <StageProgress done={roll.done} total={roll.total} light={roll.light} />
       </div>
+
+      {activeLaneId && tone && (
+        <div className={`k-stage-flow-guide flow-tone-${tone}`}>
+          {tone === "from" && (
+            <span className="guide-tag tag-from">
+              <Crosshair size={12} weight="duotone" />
+              <span>当前工序</span>
+            </span>
+          )}
+          {tone === "ok" && (
+            <span className="guide-tag tag-ok">
+              <ArrowRight size={12} weight="duotone" />
+              <span>允许流转</span>
+            </span>
+          )}
+          {tone === "wait" && (
+            <span className="guide-tag tag-wait">
+              <HourglassMedium size={12} weight="duotone" />
+              <span>待补门禁</span>
+            </span>
+          )}
+          {tone === "past" && (
+            <span className="guide-tag tag-past">
+              <CheckCircle size={12} weight="duotone" />
+              <span>已完工序</span>
+            </span>
+          )}
+          {tone === "forbidden" && (
+            <span className="guide-tag tag-forbidden">
+              <WarningOctagon size={12} weight="duotone" />
+              <span>禁止越级</span>
+            </span>
+          )}
+        </div>
+      )}
+
+      {hot && tone && (
+        <div className={`k-drop-silhouette tone-${tone}`}>
+          <div className="k-drop-silhouette-inner">
+            {tone === "ok" ? (
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                <Lightning size={12} weight="duotone" />
+                <span>释放即确认流转至【{title}】工序</span>
+              </span>
+            ) : tone === "wait" ? (
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                <WarningOctagon size={12} weight="duotone" />
+                <span>需先补齐【{title}】准入门禁</span>
+              </span>
+            ) : tone === "forbidden" ? (
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                <WarningOctagon size={12} weight="duotone" />
+                <span>研发工序不可跨阶段跳过</span>
+              </span>
+            ) : tone === "past" ? (
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                <ArrowCounterClockwise size={12} weight="duotone" />
+                <span>前置工序（退回返工请在详情操作）</span>
+              </span>
+            ) : tone === "from" ? (
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                <Crosshair size={12} weight="duotone" />
+                <span>原位释放</span>
+              </span>
+            ) : null}
+          </div>
+        </div>
+      )}
+
       <KanbanFlip sig={flipSig} delay={index * 0.022} frozen={!flipping}>
         {here.length === 0 && roll.done === roll.total && roll.total > 0 && !hint && (
           <div className="k-empty" style={{ padding: "20px 8px", display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
-            <EmotionBall emotion="33" size={32} interactive={true} autostart={true} />
+            <EmotionBall emotion="33" size={32} interactive={true} autostart={true} noBlink={true} idle={false} />
             <span style={{ fontSize: 12, fontWeight: 600, color: "var(--ok)" }}>全员已通关</span>
           </div>
         )}
         {here.length === 0 && roll.done !== roll.total && !hint && (
           <div className="k-empty" style={{ padding: "20px 8px", display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
-            <EmotionBall emotion="04" size={28} interactive={true} autostart={true} />
+            <EmotionBall emotion="03" size={28} interactive={true} autostart={true} noBlink={true} idle={false} />
             <span style={{ fontSize: 11, color: "var(--muted)" }}>暂无待办资源</span>
           </div>
         )}
@@ -969,6 +1159,7 @@ const FlowColumn = memo(function FlowColumn({
           const isDateFocus = hoveredDate ? row.item.dueAt === hoveredDate : false;
           const isDateDimmed = hoveredDate ? row.item.dueAt !== hoveredDate : false;
           const isRowFocused = hoveredLaneId === row.lane.id;
+          const isKeyFocused = focusedCardId === row.item.id;
           const canQuickConfirm = canConfirm(row.item, actor) === null && nextStageKey(row.item.stage);
           const quickAction = canQuickConfirm
             ? { label: "一键流转", onClick: () => onDropLane(row.lane.id, nextStageKey(row.item.stage)!) }
@@ -988,10 +1179,12 @@ const FlowColumn = memo(function FlowColumn({
               isDateFocus={isDateFocus}
               isDateDimmed={isDateDimmed}
               isHighlighted={isRowFocused}
+              isKeyboardFocused={isKeyFocused}
               onHoverBlocker={(hovering) => setHoveredBlockerLaneId(hovering && blocks ? row.lane.id : null)}
               onHoverCard={(hovering) => setHoveredLaneId?.(hovering ? row.lane.id : null)}
               quickAction={quickAction}
               onNudge={onNudge ? () => onNudge(row.item, row.lane) : undefined}
+              detailed={detailed}
               onOpen={() => onOpen(row.item.id)}
             />
           );
@@ -1055,7 +1248,7 @@ const FlowColumn = memo(function FlowColumn({
         {hot && (
           <div className="k-drop-silhouette">
             <div className="k-drop-silhouette-inner">
-              <ThunderboltOutlined style={{ marginRight: 4 }} />
+              <Lightning size={14} weight="duotone" style={{ marginRight: 4 }} />
               <span>释放即确认流转</span>
             </div>
           </div>

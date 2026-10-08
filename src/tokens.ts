@@ -11,12 +11,42 @@ export const FONT_FAMILY_MONO =
 
 /** 统一字号阶梯（px）。正文/标签只用这些档位，禁止 9.5px 之类的碎档。 */
 export const TYPE_SCALE = {
-  xs: 10,
-  sm: 11,
-  md: 12,
-  base: 13,
+  "2xs": 10,
+  xs: 11,
+  sm: 12,
+  md: 13,
   lg: 14,
   xl: 16,
+  "2xl": 20,
+  "3xl": 24,
+} as const;
+
+/** 统一字重规范 */
+export const FONT_WEIGHTS = {
+  regular: 400,
+  medium: 500,
+  semibold: 600,
+  bold: 700,
+  extrabold: 800,
+} as const;
+
+/** 统一行高规范 */
+export const LINE_HEIGHTS = {
+  none: 1,
+  tight: 1.25,
+  snug: 1.375,
+  normal: 1.5,
+  relaxed: 1.625,
+} as const;
+
+/** 统一圆角规范 */
+export const RADIUS = {
+  sm: 6,
+  md: 8,
+  lg: 10,
+  xl: 12,
+  "2xl": 16,
+  full: 9999,
 } as const;
 
 /** Ant Design 6 default seed / preset colors. */
@@ -55,3 +85,55 @@ export const AVATAR_COLORS = [
   palette.gold,
   palette.volcano,
 ] as const;
+
+export type ThemeKey = "light";
+
+export interface ThemeConfig {
+  key: ThemeKey;
+  name: string;
+  enName: string;
+  desc: string;
+  primary: string;
+  primaryHover: string;
+  primaryActive: string;
+  primaryLight: string;
+  primaryBorder: string;
+  primarySubtle: string;
+  accent: string;
+  accentHover: string;
+  accentLight: string;
+  gradient: string;
+  gradientSoft: string;
+  ringColor: string;
+  ballColor: string;
+  ballEyeColor: string;
+  sketchInk: string;
+  dotColor: string;
+  tagColor: string;
+}
+
+export const THEMES: Record<ThemeKey, ThemeConfig> = {
+  light: {
+    key: "light",
+    name: "极简纯白天幕",
+    enName: "Editorial Light",
+    desc: "现代极简白底 · 通透高雅",
+    primary: "#0f172a",
+    primaryHover: "#2563eb",
+    primaryActive: "#1d4ed8",
+    primaryLight: "#f8fafc",
+    primaryBorder: "#e2e8f0",
+    primarySubtle: "#f1f5f9",
+    accent: "#2563eb",
+    accentHover: "#1d4ed8",
+    accentLight: "#eff6ff",
+    gradient: "linear-gradient(135deg, #0f172a 0%, #2563eb 100%)",
+    gradientSoft: "linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)",
+    ringColor: "rgba(37, 99, 235, 0.2)",
+    ballColor: "#2563eb",
+    ballEyeColor: "#0f172a",
+    sketchInk: "#0f172a",
+    dotColor: "#2563eb",
+    tagColor: "blue",
+  },
+};

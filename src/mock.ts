@@ -2,31 +2,150 @@ import type { LaunchBatch, Person, PersonId, ResourceLane, StageDef, StageKey, W
 
 export const TODAY = "2026-08-18";
 
+export interface HolidayInfo {
+  name: string;
+  type: "statutory" | "festival" | "special";
+  isRest: boolean;
+  iconKey: string;
+  tag: string;
+  themeColor: string;
+  greeting: string;
+  easterEgg: string;
+  elfEmotion: string;
+}
+
 /**
- * 中国法定假日（可编辑日历，P0 口径）。只列法定假日当天；
- * 演示窗口 7/27–8/26 内无假日，不影响现有场景。
+ * 中国法定节假日与传统节日日历数据（矢量级微变化与专业研发彩蛋）
  */
-export const HOLIDAYS: ReadonlySet<string> = new Set([
-  "2026-01-01",
-  "2026-02-17",
-  "2026-02-18",
-  "2026-02-19",
-  "2026-02-20",
-  "2026-02-21",
-  "2026-02-22",
-  "2026-02-23",
-  "2026-04-05",
-  "2026-05-01",
-  "2026-06-19",
-  "2026-09-25",
-  "2026-10-01",
-  "2026-10-02",
-  "2026-10-03",
-  "2026-10-04",
-  "2026-10-05",
-  "2026-10-06",
-  "2026-10-07",
-]);
+export const CHINESE_HOLIDAYS_MAP: Record<string, HolidayInfo> = {
+  "2026-01-01": {
+    name: "元旦",
+    type: "statutory",
+    isRest: true,
+    iconKey: "new_year",
+    tag: "元旦假期",
+    themeColor: "#f43f5e",
+    greeting: "新一年版本交付全线通关飘绿！",
+    easterEgg: "主干分支已完成跨年基线标记，自动化集成门禁就绪。",
+    elfEmotion: "33",
+  },
+  "2026-02-16": {
+    name: "除夕",
+    type: "statutory",
+    isRest: true,
+    iconKey: "spring_festival",
+    tag: "除夕团圆",
+    themeColor: "#dc2626",
+    greeting: "合家团圆，所有生产工序零阻塞！",
+    easterEgg: "全资源 SVN 文件锁已安全释放，无卡点交付达成。",
+    elfEmotion: "33",
+  },
+  "2026-02-17": {
+    name: "春节",
+    type: "statutory",
+    isRest: true,
+    iconKey: "spring_festival",
+    tag: "新春大吉",
+    themeColor: "#dc2626",
+    greeting: "新春纳福！金蛇献瑞，管线畅通无阻！",
+    easterEgg: "新春研发通量翻倍，资产门禁校验全数一次性过审。",
+    elfEmotion: "33",
+  },
+  "2026-03-03": {
+    name: "元宵节",
+    type: "festival",
+    isRest: false,
+    iconKey: "lantern",
+    tag: "元宵闹春",
+    themeColor: "#ea580c",
+    greeting: "元宵佳节，管线流转不团团转！",
+    easterEgg: "质检谜题：哪个资产最不易被退回？—— 规范达标的资产！",
+    elfEmotion: "01",
+  },
+  "2026-04-05": {
+    name: "清明节",
+    type: "statutory",
+    isRest: true,
+    iconKey: "tomb_sweeping",
+    tag: "清明休假",
+    themeColor: "#16a34a",
+    greeting: "清明时节春风暖，踏青休整再出发！",
+    easterEgg: "泡一杯明前龙井，今日全员安心休整。",
+    elfEmotion: "02",
+  },
+  "2026-05-01": {
+    name: "五一劳动节",
+    type: "statutory",
+    isRest: true,
+    iconKey: "labor",
+    tag: "五一假期",
+    themeColor: "#f97316",
+    greeting: "致敬每一位匠心打磨的美术与研发伙伴！",
+    easterEgg: "颁发五一劳动勋章：版本交付吞吐量提升 47%！",
+    elfEmotion: "30",
+  },
+  "2026-06-19": {
+    name: "端午节",
+    type: "statutory",
+    isRest: true,
+    iconKey: "dragon_boat",
+    tag: "端午安康",
+    themeColor: "#0d9488",
+    greeting: "端午安康！管线如龙舟竞渡直达终点！",
+    easterEgg: "龙舟冲线！恭喜全流水线顺利入库！",
+    elfEmotion: "33",
+  },
+  "2026-08-19": {
+    name: "七夕节",
+    type: "festival",
+    isRest: false,
+    iconKey: "qixi",
+    tag: "七夕良辰",
+    themeColor: "#7c3aed",
+    greeting: "愿研发与美术心有灵犀，需求一次通过！",
+    easterEgg: "鹊桥相会！夏日限定活动皮肤已全数过审交付！",
+    elfEmotion: "33",
+  },
+  "2026-09-25": {
+    name: "中秋节",
+    type: "statutory",
+    isRest: true,
+    iconKey: "mid_autumn",
+    tag: "中秋团圆",
+    themeColor: "#d97706",
+    greeting: "中秋月满人团圆！全员月饼已下发，无阻塞准时放假！",
+    easterEgg: "全员月饼礼盒送达，制片宣布今晚 17:00 前无阻塞准时封板！",
+    elfEmotion: "33",
+  },
+  "2026-10-01": {
+    name: "国庆节",
+    type: "statutory",
+    isRest: true,
+    iconKey: "national_day",
+    tag: "国庆黄金周",
+    themeColor: "#e11d48",
+    greeting: "盛世华诞，欢度国庆！祝祖国繁荣昌盛！",
+    easterEgg: "国庆 7 天长假，全管线封板守护假期安心！",
+    elfEmotion: "33",
+  },
+  "2026-10-24": {
+    name: "1024 程序员节",
+    type: "festival",
+    isRest: false,
+    iconKey: "1024",
+    tag: "1024节",
+    themeColor: "#0284c7",
+    greeting: "1024 快乐！愿代码零 Bug，一次编译直接通过！",
+    easterEgg: "1024 专属 Buff：自动化门禁质检通关率 +100%！",
+    elfEmotion: "30",
+  },
+};
+
+export const HOLIDAYS: ReadonlySet<string> = new Set(
+  Object.entries(CHINESE_HOLIDAYS_MAP)
+    .filter(([_, info]) => info.isRest)
+    .map(([iso]) => iso)
+);
 
 export const STAGES: StageDef[] = [
   { key: "launch", short: "上新", name: "上新时间表", color: "#52c41a" },
@@ -62,8 +181,11 @@ function ev(
   from?: WorkState,
   to?: WorkState,
   reason?: string,
+  rejectionCategory?: import("./types").RejectionCategory,
+  isWaiver?: boolean,
+  waiverReason?: string,
 ) {
-  return { id, at, actorId, action, from, to, reason };
+  return { id, at, actorId, action, from, to, reason, rejectionCategory, isWaiver, waiverReason };
 }
 
 function item(partial: WorkItem): WorkItem {
@@ -89,9 +211,10 @@ export function seedPrimaryBatch(): LaunchBatch {
   return {
     id: "b-summer",
     name: "2026 夏日家园上新",
-    subtitle: "试运行批次 · 模板 v1 快照",
+    subtitle: "试运行批次 · 包含逾期与待办模拟",
     launchDate: "2026-08-26",
     batchDriId: "xiangbin",
+    lifecycle: "in_progress",
     lanes: [
       {
         id: "q-art",
@@ -441,13 +564,23 @@ export function seedPrimaryBatch(): LaunchBatch {
             locked: false,
             waiting: false,
             skipped: false,
-            evidence: { svnPath: "svn://art/props/summer", svnRev: "" },
-            completeWhen: mixedGates([
-              ["必需文件已上传", false],
-              ["路径明确", true],
-              ["版本已登记", false],
-            ]),
-            enterNextWhen: mixedGates([["上传完整后解锁审核", false]]),
+            evidence: {
+              svnPath: "svn://game/res/assets/summer2026/prop3d/v1",
+              svnRev: "r98410",
+              vertexCount: 16800,
+              drawCall: 58,
+              pbrCompliant: true,
+              textureSpec: "2048x2048 ASTC",
+              note: "高模已拓扑烘焙，贴图 PBR 规范已达标，正在执行最终 SVN 提交核验",
+            },
+            completeWhen: [
+              { id: "g0", label: "SVN 规范路径", ok: true, level: "L1", metricThreshold: "URI: svn://..." },
+              { id: "g1", label: "Revision 版本号已登记", ok: true, level: "L1", metricThreshold: "正整数" },
+              { id: "g2", label: "三角面数预算控制", ok: true, level: "L2", metricThreshold: "Tris ≤ 15,000" },
+            ],
+            enterNextWhen: [
+              { id: "gn0", label: "上传完整且机检通过后解锁审核", ok: false, level: "L1" },
+            ],
             history: [
               ev("p3u", "2026-08-16 14:02", "zhongzhiyong", "开始上传", "not_started", "in_progress"),
             ],
@@ -924,6 +1057,16 @@ export function seedPrimaryBatch(): LaunchBatch {
 
 const STAGE_ORDER: StageKey[] = ["launch", "schedule", "produce", "upload", "review", "accept", "checkin"];
 
+const STAGE_DEFAULTS: Record<StageKey, { offsetLabel: string; defaultDue: string; defaultDri: PersonId; defaultConfirmer: PersonId }> = {
+  launch: { offsetLabel: "上线日确认时", defaultDue: "2026-07-28", defaultDri: "longhui", defaultConfirmer: "xiangbin" },
+  schedule: { offsetLabel: "上线前 4 周", defaultDue: "2026-07-30", defaultDri: "xiangbin", defaultConfirmer: "suwan" },
+  produce: { offsetLabel: "制作阶段", defaultDue: "2026-08-14", defaultDri: "suwan", defaultConfirmer: "xiangbin" },
+  upload: { offsetLabel: "制作完成后当日", defaultDue: "2026-08-18", defaultDri: "suwan", defaultConfirmer: "liuxinyu" },
+  review: { offsetLabel: "审核预留 2-3 工作日", defaultDue: "2026-08-21", defaultDri: "liuxinyu", defaultConfirmer: "xiangbin" },
+  accept: { offsetLabel: "审核后 1-2 工作日", defaultDue: "2026-08-24", defaultDri: "luohaibin", defaultConfirmer: "xiangbin" },
+  checkin: { offsetLabel: "不晚于上线前 1 天", defaultDue: "2026-08-25", defaultDri: "suwan", defaultConfirmer: "luohaibin" },
+};
+
 function stubLane(
   id: string,
   name: string,
@@ -937,26 +1080,49 @@ function stubLane(
     id,
     name,
     type,
-    items: STAGE_ORDER.map((stage, i) =>
-      item({
+    items: STAGE_ORDER.map((stage, i) => {
+      const def = STAGE_DEFAULTS[stage];
+      const isPast = i < idx;
+      const isCurrent = i === idx;
+      const stageDri = (stage === "launch" || stage === "schedule") ? def.defaultDri : (stage === "review" ? "liuxinyu" : (stage === "accept" ? "luohaibin" : driId));
+      const stageConfirmer = stageDri === "xiangbin" ? (driId !== "xiangbin" ? driId : "luohaibin") : "xiangbin";
+      const itemDue = isCurrent ? dueAt : (isPast ? def.defaultDue : def.defaultDue);
+
+      const completeWhen = isPast
+        ? doneGates("必需内容已交付", "格式与规格达标")
+        : isCurrent
+          ? mixedGates([["内容制作中", true], ["交付物齐套", false]])
+          : mixedGates([["前序依赖就绪", false], ["交付物齐套", false]]);
+
+      const enterNextWhen = isPast
+        ? doneGates("已满足流转要求")
+        : mixedGates([["完成条件已通过", isPast], ["确认人已核验", false]]);
+
+      const evidence = isPast
+        ? (stage === "upload" ? { svnPath: `svn://art/assets/${id}`, svnRev: "18390" } : { note: "已按标准准出" })
+        : (isCurrent && stage === "upload" ? { svnPath: `svn://art/assets/${id}`, svnRev: "" } : {});
+
+      return item({
         id: `${id}-${stage}`,
         laneId: id,
         stage,
-        state: i < idx ? "confirmed" : i === idx ? "in_progress" : "not_started",
-        dueAt: i < idx ? "2026-08-10" : dueAt,
-        offsetLabel: "相对上线日",
-        driId: i <= 1 ? "xiangbin" : driId,
-        confirmerId: "xiangbin",
-        collabIds: [],
+        state: isPast ? "confirmed" : isCurrent ? "in_progress" : "not_started",
+        dueAt: itemDue,
+        offsetLabel: def.offsetLabel,
+        driId: stageDri,
+        confirmerId: stageConfirmer,
+        collabIds: stage === "accept" ? ["luotianyi"] : [],
         locked: false,
         waiting: i > idx,
         skipped: false,
-        evidence: {},
-        completeWhen: i < idx ? doneGates("已完成") : mixedGates([["待交付", false]]),
-        enterNextWhen: i < idx ? doneGates("已流转") : mixedGates([["可流转", false]]),
-        history: i === 0 ? histLaunch : i === 1 ? histSched : [],
-      }),
-    ),
+        evidence,
+        completeWhen,
+        enterNextWhen,
+        history: isPast
+          ? [ev(`${id}-h-${stage}`, def.defaultDue, stageConfirmer, "确认通过", "submitted", "confirmed")]
+          : (isCurrent ? [ev(`${id}-h-${stage}`, "2026-08-17 10:00", stageDri, "开始推进", "not_started", "in_progress")] : []),
+      });
+    }),
   };
 }
 
@@ -978,10 +1144,11 @@ export function seedQuietBatch(): LaunchBatch {
   return {
     id: "b-quiet",
     name: "2026 九月常规周更",
-    subtitle: "对照批次 · 无红灯",
+    subtitle: "对照批次 · 稳步推进中",
     launchDate: "2026-09-16",
     batchDriId: "xiangbin",
-    lanes: src.lanes.slice(0, 3).map((lane) => ({
+    lifecycle: "accepting",
+    lanes: src.lanes.slice(0, 4).map((lane) => ({
       ...lane,
       id: `${lane.id}-q`,
       items: lane.items.map((it) => ({
@@ -998,6 +1165,38 @@ export function seedQuietBatch(): LaunchBatch {
   };
 }
 
+export function createMockBatch(
+  name: string,
+  subtitle: string,
+  launchDate: string,
+  template = "standard",
+): LaunchBatch {
+  const id = `b-${Date.now().toString(36)}`;
+  const lanes =
+    template === "heavy"
+      ? [
+          stubLane(`${id}-hero`, "主视觉宣发海报", "2D 概念", "produce", "suwan", "2026-08-20"),
+          stubLane(`${id}-weapon`, "传奇武器 3D 模型", "3D 道具", "produce", "zhongzhiyong", "2026-08-18"),
+          stubLane(`${id}-fx`, "武器流光特效包", "特效", "produce", "yening", "2026-08-21"),
+          stubLane(`${id}-sound`, "专属打击音效", "音频", "produce", "hanzhou", "2026-08-22"),
+        ]
+      : [
+          stubLane(`${id}-banner`, "版本主题 Banner", "2D 平面", "produce", "suwan", "2026-08-22"),
+          stubLane(`${id}-ui`, "活动界面 UI 皮肤", "2D UI", "produce", "jiangxia", "2026-08-23"),
+          stubLane(`${id}-copy`, "活动剧情与任务文案", "文案", "produce", "chenke", "2026-08-21"),
+        ];
+
+  return {
+    id,
+    name: name.trim() || "新建版本批次",
+    subtitle: subtitle.trim() || "排期规则自动换算基线",
+    launchDate,
+    batchDriId: "xiangbin",
+    lifecycle: "planning",
+    lanes,
+  };
+}
+
 export const PREVIEW_ROLES: Array<{ id: PersonId; label: string }> = [
   { id: "xiangbin", label: "向彬 · 制片" },
   { id: "zhongzhiyong", label: "钟志勇 · 制作" },
@@ -1005,3 +1204,206 @@ export const PREVIEW_ROLES: Array<{ id: PersonId; label: string }> = [
   { id: "liuxinyu", label: "刘心语 · 送审" },
   { id: "chenke", label: "陈可 · 文案" },
 ];
+
+export type ScenarioPresetKey =
+  | "baseline"
+  | "red_isolate"
+  | "gate_blocked"
+  | "rework_loop"
+  | "all_green";
+
+export interface ScenarioPresetMeta {
+  key: ScenarioPresetKey;
+  title: string;
+  badge: string;
+  badgeColor: string;
+  desc: string;
+  toast: string;
+}
+
+export const SCENARIO_PRESETS: ScenarioPresetMeta[] = [
+  {
+    key: "baseline",
+    title: "基准批次：夏季大版本",
+    badge: "标准演示",
+    badgeColor: "blue",
+    desc: "初始状态：3D道具上传逾期，文案临期黄灯，其余正常推进",
+    toast: "已载入【基准演示批次】：请关注顶栏倒计时与红黄灯摘要",
+  },
+  {
+    key: "red_isolate",
+    title: "场景一：单链红灯故障隔离",
+    badge: "单链隔离",
+    badgeColor: "volcano",
+    desc: "3D 武器上传逾期标红，仅锁定该泳道后续审核验收，2D等其他资源照常流转",
+    toast: "已载入【单链故障隔离场景】：3D武器已锁死下游，请观察2D时装正常流转！",
+  },
+  {
+    key: "gate_blocked",
+    title: "场景二：AYON 门禁未达标拦截",
+    badge: "质量门禁",
+    badgeColor: "magenta",
+    desc: "未上传 SVN 路径或质检未勾选，门禁确认放行按钮强制禁用，防止空转",
+    toast: "已载入【门禁拦截场景】：打开工作项抽屉，未达标条件将禁用确认按钮！",
+  },
+  {
+    key: "rework_loop",
+    title: "场景三：驳回退回与返工闭环",
+    badge: "异常闭环",
+    badgeColor: "orange",
+    desc: "验收人驳回必填结构化原因（美术穿模/技术超标），主责人进入返工状态",
+    toast: "已载入【退回返工场景】：工作项已被打回，点击【开始返工】可查看驳回历史",
+  },
+  {
+    key: "all_green",
+    title: "场景四：全线绿灯就绪待交付",
+    badge: "全线绿灯",
+    badgeColor: "green",
+    desc: "所有资源均已通过前六个主工序门禁，进入最终入库发布倒计时",
+    toast: "已载入【全线绿灯就绪】：所有节点质检全通，批次达到 100% 待发布状态！",
+  },
+];
+
+export function buildScenarioBatch(key: ScenarioPresetKey): LaunchBatch {
+  const base = seedPrimaryBatch();
+
+  if (key === "baseline") {
+    return base;
+  }
+
+  if (key === "red_isolate") {
+    // 确保 3D 道具处于逾期红灯并严格锁定下游，而 2D 平面推进到待验收
+    return {
+      ...base,
+      lanes: base.lanes.map((lane) => {
+        if (lane.id === "prop3d") {
+          return {
+            ...lane,
+            items: lane.items.map((it) => {
+              if (it.stage === "upload") {
+                return { ...it, state: "in_progress", dueAt: "2026-08-10" }; // 严重逾期红灯
+              }
+              if (it.stage === "review" || it.stage === "accept" || it.stage === "checkin") {
+                return { ...it, locked: true, waiting: true };
+              }
+              return it;
+            }),
+          };
+        }
+        if (lane.id === "flat2d") {
+          return {
+            ...lane,
+            items: lane.items.map((it) => {
+              if (it.stage === "accept") {
+                return { ...it, state: "submitted", locked: false, waiting: false };
+              }
+              return it;
+            }),
+          };
+        }
+        return lane;
+      }),
+    };
+  }
+
+  if (key === "gate_blocked") {
+    // 工作项提交了但没有填写 SVN 凭证，且门禁条件全红
+    return {
+      ...base,
+      lanes: base.lanes.map((lane) => {
+        if (lane.id === "prop3d") {
+          return {
+            ...lane,
+            items: lane.items.map((it) => {
+              if (it.stage === "review") {
+                return {
+                  ...it,
+                  state: "submitted",
+                  locked: false,
+                  waiting: false,
+                  evidence: { svnPath: "", svnRev: "" }, // 缺失凭证
+                  completeWhen: it.completeWhen.map((g) => ({ ...g, ok: false })),
+                  enterNextWhen: it.enterNextWhen.map((g) => ({ ...g, ok: false })),
+                };
+              }
+              return it;
+            }),
+          };
+        }
+        return lane;
+      }),
+    };
+  }
+
+  if (key === "rework_loop") {
+    // 处于被退回返工状态
+    return {
+      ...base,
+      lanes: base.lanes.map((lane) => {
+        if (lane.id === "prop3d") {
+          return {
+            ...lane,
+            items: lane.items.map((it) => {
+              if (it.stage === "produce") {
+                return {
+                  ...it,
+                  state: "rejected",
+                  locked: false,
+                  waiting: false,
+                  history: [
+                    ...it.history,
+                    {
+                      id: "h-rej-demo",
+                      at: "2026-08-17 16:30",
+                      actorId: "luohaibin",
+                      action: "退回驳回",
+                      from: "submitted",
+                      to: "rejected",
+                      reason: "法线贴图接缝明显，且动作骨骼在奔跑状态下出现右腿穿模，需重新烘焙贴图并修正权重。",
+                      rejectionCategory: "art_effect",
+                    },
+                  ],
+                };
+              }
+              return it;
+            }),
+          };
+        }
+        return lane;
+      }),
+    };
+  }
+
+  if (key === "all_green") {
+    // 全绿灯：所有资源均已通过验收，处于待入库状态
+    return {
+      ...base,
+      lanes: base.lanes.map((lane) => ({
+        ...lane,
+        items: lane.items.map((it) => {
+          if (it.stage === "checkin") {
+            return {
+              ...it,
+              state: "in_progress",
+              dueAt: "2026-08-25",
+              locked: false,
+              waiting: false,
+              completeWhen: it.completeWhen.map((g) => ({ ...g, ok: true })),
+            };
+          }
+          return {
+            ...it,
+            state: "confirmed",
+            locked: false,
+            waiting: false,
+            completeWhen: it.completeWhen.map((g) => ({ ...g, ok: true })),
+            enterNextWhen: it.enterNextWhen.map((g) => ({ ...g, ok: true })),
+          };
+        }),
+      })),
+    };
+  }
+
+  return base;
+}
+
